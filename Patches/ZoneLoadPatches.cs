@@ -85,8 +85,9 @@ internal static class ZoneLoadPatches
         return _inAreaReadyCheck || !Destinations.Any || !Destinations.Covers(sector) || !IsZoneLoaded(sector);
     }
 
-    /// Missing zones are taken ring by ring across all destinations, so each portal gets its
-    /// centre zone before any gets an outer ring.
+    /// Missing zones are taken in need order across all destinations: every centre zone, then
+    /// every zone within PrimeRadius of a destination, which is what its first StaticView picture
+    /// and a fast teleport wait for, then the remaining zones ring by ring.
     [HarmonyPostfix]
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.CreateLocalZones))]
     private static void ZoneSystemCreateLocalZonesPostfix(ZoneSystem __instance, ref bool __result)
@@ -100,8 +101,7 @@ internal static class ZoneLoadPatches
         foreach (Destination destination in destinations)
             outerRing = Mathf.Max(outerRing, destination.Radius);
 
-        bool haveMissing = false;
-        Vector2s missing = default;
+        bool haveMissing = FindMissingNearZone(__instance, destinations, out Vector2s missing);
         for (int ring = 0; ring <= outerRing; ring++)
         {
             foreach (Destination destination in destinations)
@@ -141,6 +141,47 @@ internal static class ZoneLoadPatches
         }
 
         PerfStats.ZonePatchTicks += PerfStats.Elapsed(start);
+    }
+
+    private static bool FindMissingNearZone(ZoneSystem zoneSystem, Destination[] destinations, out Vector2s missing)
+    {
+        foreach (Destination destination in destinations)
+        {
+            if (!zoneSystem.m_zones.ContainsKey(destination.Zone))
+            {
+                missing = destination.Zone;
+                return true;
+            }
+        }
+
+        foreach (Destination destination in destinations)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    Vector2s zone = new(destination.Zone.x + dx, destination.Zone.y + dy);
+                    if (!zoneSystem.m_zones.ContainsKey(zone) && WithinPrimeRadius(zoneSystem, zone, destination.Position))
+                    {
+                        missing = zone;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        missing = default;
+        return false;
+    }
+
+    /// Whether any part of the zone lies within PrimeRadius of point, on the ground plane.
+    private static bool WithinPrimeRadius(ZoneSystem zoneSystem, Vector2s zone, Vector3 point)
+    {
+        float halfZone = zoneSystem.m_zoneSize * 0.5f;
+        Vector3 zonePos = ZoneSystem.GetZonePos(zone);
+        float gapX = Mathf.Max(Mathf.Abs(point.x - zonePos.x) - halfZone, 0f);
+        float gapZ = Mathf.Max(Mathf.Abs(point.z - zonePos.z) - halfZone, 0f);
+        return gapX * gapX + gapZ * gapZ <= PrimeRadius * PrimeRadius;
     }
 
     /// IsAreaReady finds its objects through FindSectorObjects. With the destination patches
@@ -288,7 +329,6 @@ internal static class ZoneLoadPatches
         if (zoneSystem == null || scene == null || ZDOMan.instance == null)
             return false;
 
-        float halfZone = zoneSystem.m_zoneSize * 0.5f;
         float radiusSqr = PrimeRadius * PrimeRadius;
         Vector2s centre = ZoneSystem.GetZone(origin);
 
@@ -299,10 +339,7 @@ internal static class ZoneLoadPatches
             for (int dx = -1; dx <= 1; dx++)
             {
                 Vector2s zone = new(centre.x + dx, centre.y + dy);
-                Vector3 zonePos = ZoneSystem.GetZonePos(zone);
-                float gapX = Mathf.Max(Mathf.Abs(origin.x - zonePos.x) - halfZone, 0f);
-                float gapZ = Mathf.Max(Mathf.Abs(origin.z - zonePos.z) - halfZone, 0f);
-                if (gapX * gapX + gapZ * gapZ > radiusSqr)
+                if (!WithinPrimeRadius(zoneSystem, zone, origin))
                     continue;
                 // An unloaded zone has no ground yet.
                 if (!zoneSystem.m_zones.ContainsKey(zone))

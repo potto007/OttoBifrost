@@ -17,6 +17,10 @@ All notable changes to OttoBifrost.
 - For 5 s after you land, the portal nearest you keeps loading first and at full
   size. Before, every portal waited behind the area you landed in, so a portal you
   took right away was not preloaded yet.
+- Destination zones load in need order. Every destination gets its centre zone, then
+  every zone within 40 m of its far portal, before any destination gets its outer
+  zones. In a hub with many portals, the first pictures used to come out one by one
+  over about 16 s while the outer zones of earlier portals loaded first.
 
 ## v1.2.0
 
