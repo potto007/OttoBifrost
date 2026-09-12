@@ -74,8 +74,12 @@ internal static class TeleportPatches
         }
 
         __instance.m_teleportCooldown = 0f;
-        __instance.m_teleportTimer += dt;
-        if (__instance.m_teleportTimer <= MinimumTeleportTime)
+        // Timed from TeleportTo, on the vanilla scale. m_teleportTimer is not reliable: Server
+        // devcommands sets it to 15 in debug mode, which handed the trip to vanilla on the first
+        // frame, before the arrival area had settled.
+        float timer = SkipVanillaWait + (Time.time - _startedAt);
+        __instance.m_teleportTimer = timer;
+        if (timer <= MinimumTeleportTime)
             return false;
 
         Vector3 target = __instance.m_teleportTargetPos;
@@ -100,7 +104,7 @@ internal static class TeleportPatches
         bool areaReady = ZNetScene.instance.IsAreaReady(target);
         bool floorFound = ZoneSystem.instance.FindFloor(target, out float floorHeight);
 
-        if (areaReady && dataSettled && (floorFound || __instance.m_teleportTimer > FloorSearchTimeout))
+        if (areaReady && dataSettled && (floorFound || timer > FloorSearchTimeout))
         {
             if (floorFound)
                 __instance.transform.position = new Vector3(target.x, floorHeight, target.z);
@@ -112,7 +116,7 @@ internal static class TeleportPatches
             return false;
         }
 
-        if (__instance.m_teleportTimer > FallbackToVanillaTime)
+        if (timer > FallbackToVanillaTime)
         {
             _fastTrip = false;
             LogOutcome("handed over to vanilla", areaReady, dataSettled, floorFound);
