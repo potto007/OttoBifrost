@@ -9,9 +9,10 @@ namespace OttoBifrost.Components;
 
 /// Shows the far end of the portal on a disc in its opening.
 ///
-/// StaticView takes one picture per approach, once the objects at the far end are built, and
-/// renders nothing after that. LiveView renders only the window nearest the player, to bound
-/// the render cost. The others keep their last frame.
+/// StaticView takes a first picture once the objects close to the far portal exist, and a second
+/// once the whole arrival area does, then renders nothing until the next approach. LiveView
+/// renders only the window nearest the player, to bound the render cost. The others keep their
+/// last frame.
 public sealed class PortalWindow : MonoBehaviour
 {
     private const float MaxViewDistance = 12f;
@@ -41,7 +42,10 @@ public sealed class PortalWindow : MonoBehaviour
     // Without the mod on the server, "built" means the arrival object count held still this long.
     private const float StaticSettleTime = 1f;
     // Lets terrain edits rebuild their heightmaps before the picture is taken.
-    private const float StaticCaptureDelay = 0.5f;
+    private const float StaticCaptureDelay = 0.2f;
+    // The first picture waits only for objects within the radius the destination pass creates
+    // first. Objects further than this behind the far portal are out of shot.
+    private const float StaticBehindAllowance = 2f;
     // A static picture shimmers and ripples like the surface of the portal, fades out at the rim,
     // and lets the portal behind it show through.
     private const int RippleRings = 12;
@@ -64,6 +68,8 @@ public sealed class PortalWindow : MonoBehaviour
     private static int _liveFrame = -1;
     // One static picture per frame, so walking into a hub room does not render every portal at once.
     private static int _captureFrame = -1;
+    private static readonly List<ZDO> NearObjects = new();
+    private static readonly HashSet<ZoneSystem.SectorIndex> NearSectors = new();
     private static Mesh? _discMesh;
     // Every static window shares one ripple mesh, animated once per frame.
     private static Mesh? _rippleMesh;
@@ -86,12 +92,22 @@ public sealed class PortalWindow : MonoBehaviour
     private bool _hasFrame;
     private float _nextRenderTime;
     private bool _staticView;
-    private bool _captureStale = true;
+    private StaticStage _captured;
     private ZDOID _frameFarEnd = ZDOID.None;
     private float _nextStaticCheck;
     private int _settleCount = -1;
     private float _settleChangedAt;
-    private float _builtSince = -1f;
+    private float _readySince = -1f;
+    private float _approachedAt = -1f;
+
+    private enum StaticStage
+    {
+        None,
+        // The objects close to the far portal exist.
+        Near,
+        // Every object around the arrival point exists.
+        Full
+    }
     private TeleportWorld? _hiddenPortal;
     private Renderer[] _hiddenRenderers = Array.Empty<Renderer>();
     private bool[] _hiddenWasEnabled = Array.Empty<bool>();
@@ -139,7 +155,7 @@ public sealed class PortalWindow : MonoBehaviour
         {
             // A frame from the other mode stays up until the new mode replaces it.
             _staticView = staticView;
-            _captureStale = true;
+            _captured = StaticStage.None;
         }
         if (!staticView)
             SelectLiveWindow(eye);
@@ -250,36 +266,47 @@ public sealed class PortalWindow : MonoBehaviour
         if (_hasFrame)
             AnimateRipple();
 
+        if (_approachedAt < 0f)
+            _approachedAt = Time.time;
+
         // Mid-teleport, the far end of the arrival portal is the area the player is leaving,
         // and it is being unloaded.
-        if (!_captureStale || farEnd == null || Time.time < _nextStaticCheck || Player.m_localPlayer.IsTeleporting())
+        if (_captured == StaticStage.Full || farEnd == null || Time.time < _nextStaticCheck || Player.m_localPlayer.IsTeleporting())
             return;
         _nextStaticCheck = Time.time + StaticCheckInterval;
 
         TeleportWorld? farPortal = InstanceOf(farEnd);
-        if (farPortal == null || !IsFarEndBuilt(farEnd, farPortal))
+        StaticStage ready = farPortal != null ? BuiltStage(farEnd, farPortal) : StaticStage.None;
+        if (ready <= _captured)
         {
-            _builtSince = -1f;
+            _readySince = -1f;
             return;
         }
 
-        if (_builtSince < 0f)
-            _builtSince = Time.time;
-        if (Time.time - _builtSince < StaticCaptureDelay || _captureFrame == Time.frameCount)
+        if (_readySince < 0f)
+            _readySince = Time.time;
+        if (Time.time - _readySince < StaticCaptureDelay || _captureFrame == Time.frameCount)
             return;
 
         _captureFrame = Time.frameCount;
-        CaptureStatic(main, farPortal);
-        _captureStale = false;
+        CaptureStatic(main, farPortal!);
+        _captured = ready;
+        _readySince = -1f;
         SetDiscVisible(true);
+
+        if (PerfStats.Enabled)
+            OttoBifrostPlugin.Log.LogInfo(
+                $"Static picture of {farEnd.m_uid} ({(ready == StaticStage.Full ? "whole arrival area" : "near objects")}) " +
+                $"after {Time.time - _approachedAt:F2} s in range: server reports complete {DestinationSync.IsDestinationComplete(farEnd.m_uid)}, " +
+                $"{_settleCount} objects known around the arrival point");
     }
 
-    /// The test a fast teleport makes before it lands the player: every object around the
-    /// arrival point exists, and the server has nothing left to send or the count held still.
-    private bool IsFarEndBuilt(ZDO farEnd, TeleportWorld farPortal)
+    /// Both stages need the server to have nothing left to send, or the arrival object count to
+    /// hold still. Full is the test a fast teleport makes before it lands the player.
+    private StaticStage BuiltStage(ZDO farEnd, TeleportWorld farPortal)
     {
-        if (ZoneSystem.instance == null || ZNetScene.instance == null)
-            return false;
+        if (ZoneSystem.instance == null || ZNetScene.instance == null || ZDOMan.instance == null)
+            return StaticStage.None;
 
         Transform far = farPortal.transform;
         // Vanilla TeleportWorld.Teleport lands the player here.
@@ -292,14 +319,71 @@ public sealed class PortalWindow : MonoBehaviour
         }
 
         bool settled = DestinationSync.IsDestinationComplete(farEnd.m_uid) || Time.time - _settleChangedAt >= StaticSettleTime;
-        return settled && ZNetScene.instance.IsAreaReady(arrival);
+        if (!settled)
+            return StaticStage.None;
+        if (ZNetScene.instance.IsAreaReady(arrival))
+            return StaticStage.Full;
+        return _captured < StaticStage.Near && AreNearObjectsBuilt(far) ? StaticStage.Near : StaticStage.None;
+    }
+
+    /// Every object within the destination pass's radius of the far portal exists, apart from
+    /// those behind it. At a big base this passes well before the 3x3 zones IsAreaReady checks.
+    private static bool AreNearObjectsBuilt(Transform far)
+    {
+        ZoneSystem zoneSystem = ZoneSystem.instance;
+        ZNetScene scene = ZNetScene.instance;
+        Vector3 origin = far.position;
+        Vector3 forward = far.forward;
+        float halfZone = zoneSystem.m_zoneSize * 0.5f;
+        float radiusSqr = ZoneLoadPatches.PrimeRadius * ZoneLoadPatches.PrimeRadius;
+        Vector2s centre = ZoneSystem.GetZone(origin);
+
+        NearObjects.Clear();
+        NearSectors.Clear();
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                Vector2s zone = new(centre.x + dx, centre.y + dy);
+                Vector3 zonePos = ZoneSystem.GetZonePos(zone);
+                float gapX = Mathf.Max(Mathf.Abs(origin.x - zonePos.x) - halfZone, 0f);
+                float gapZ = Mathf.Max(Mathf.Abs(origin.z - zonePos.z) - halfZone, 0f);
+                if (gapX * gapX + gapZ * gapZ > radiusSqr)
+                    continue;
+                // An unloaded zone has no ground to show yet.
+                if (!zoneSystem.m_zones.ContainsKey(zone))
+                    return false;
+                ZDOMan.instance.FindObjects(zone, NearObjects, NearSectors);
+            }
+        }
+
+        bool built = true;
+        foreach (ZDO zdo in NearObjects)
+        {
+            if (!zdo.IsValid() || !scene.IsPrefabZDOValid(zdo) || scene.HaveInstance(zdo))
+                continue;
+
+            // A terrain edit shapes its whole zone, so its position does not matter.
+            Vector3 offset = zdo.GetPosition() - origin;
+            offset.y = 0f;
+            if (zdo.Type != ZDO.ObjectType.Terrain &&
+                (offset.sqrMagnitude > radiusSqr || Vector3.Dot(offset, forward) < -StaticBehindAllowance))
+                continue;
+
+            built = false;
+            break;
+        }
+
+        NearObjects.Clear();
+        return built;
     }
 
     private void ResetStaticCapture()
     {
-        _captureStale = true;
+        _captured = StaticStage.None;
         _settleCount = -1;
-        _builtSince = -1f;
+        _readySince = -1f;
+        _approachedAt = -1f;
     }
 
     private void CaptureStatic(Camera main, TeleportWorld farPortal)

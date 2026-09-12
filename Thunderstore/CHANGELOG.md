@@ -13,6 +13,12 @@ All notable changes to OttoBifrost.
   the portal behind them show through.
 - `StaticView` no longer takes a picture mid-teleport, when the far side is the area
   you are leaving.
+- `StaticView` shows a picture sooner at a big base. The first picture waits only
+  for the objects within 40 m in front of the far portal, not every object in the
+  3x3 zones around it. A second picture replaces it once the whole arrival area has
+  loaded. The delay before each picture dropped from 0.5 s to 0.2 s.
+- With `LogPerformance` on, each `StaticView` picture logs how long after you came in
+  range it was taken, and whether it covers the near objects or the whole area.
 - Fast teleports keep their own clock. In debug mode, Server devcommands' "Debug mode
   fast teleport" sets the teleport timer to 15. The fast path read that as past its
   8 second limit and handed the trip to vanilla on the first frame, so you could land

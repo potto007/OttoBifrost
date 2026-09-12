@@ -19,11 +19,12 @@ trip between two built bases becomes a walk instead of a loading screen.
   round preview shows the arrival side, and both faces of the portal show the same
   place. The disc is sized for the wood arch, so it looks small on the stone portal.
   The preview has two modes, set with `PreviewMode`:
-  - `StaticView`, the default. Once the objects around the arrival point are built,
-    the mod takes one picture of the destination, facing the way you face when you
-    arrive, and shows it until you walk away. Each new approach takes a new picture.
-    The picture shimmers and ripples, fades out at its rim, and lets 30% of the
-    portal behind it show through.
+  - `StaticView`, the default. The mod takes a picture of the destination, facing the
+    way you face when you arrive, as soon as everything within 40 m in front of the
+    far portal exists. When the rest of the arrival area has loaded, it takes a second
+    picture to fill in distant buildings. The picture stays until you walk away, and
+    each new approach starts again. It shimmers and ripples, fades out at its rim, and
+    lets 30% of the portal behind it show through.
   - `LiveView`. The preview renders continuously and follows your head, so the view
     shifts as you move.
 - **Loading before you arrive.** Within 15 m of a portal the zones around its
@@ -42,8 +43,8 @@ trip between two built bases becomes a walk instead of a loading screen.
 
 ### What it costs
 
-`StaticView` renders once per portal per approach, at most one portal per frame, and
-nothing after that.
+`StaticView` renders at most twice per portal per approach, at most one portal per
+frame, and nothing after that.
 
 In `LiveView` only the closest preview renders live. The others keep their last
 frame. The live one renders every frame inside 4 m, 10 times a second out to 8 m,
@@ -63,7 +64,7 @@ from the server.
 | OttoBifrost | `LockConfiguration` | `true` | Only server admins can change the synced settings. |
 | OttoBifrost | `PreloadDestinations` | `true` | Load the area around a portal's destination while you stand near the portal. Synced. |
 | OttoBifrost | `FastTeleport` | `true` | Skip the vanilla wait when the destination is already loaded. Synced. |
-| Preview | `PreviewMode` | `StaticView` | `StaticView` shows one picture of the destination, taken once its objects are built. `LiveView` renders the destination continuously and follows your head. Not synced. |
+| Preview | `PreviewMode` | `StaticView` | `StaticView` shows a picture of the destination, taken once the objects near the far portal exist and again once the whole arrival area has loaded. `LiveView` renders the destination continuously and follows your head. Not synced. |
 | Debug | `LogPerformance` | `false` | Write a timing summary to the log every 5 seconds. Not synced. |
 
 ___________________________

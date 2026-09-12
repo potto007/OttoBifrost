@@ -18,7 +18,7 @@ internal static class ZoneLoadPatches
     private const float MaxPrimeInterval = 2f;
     private const int CreatesPerPass = 20;
     // Under one zone wide, so the 3x3 zones around a destination hold every object in range.
-    private const float PrimeRadius = 40f;
+    internal const float PrimeRadius = 40f;
 
     private static readonly List<ZDO> Candidates = new();
     private static readonly HashSet<ZoneSystem.SectorIndex> CandidateSectors = new();
