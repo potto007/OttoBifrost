@@ -15,7 +15,8 @@ import urllib.request
 COMMUNITY = "valheim"
 BASE = f"https://{COMMUNITY}.hexium.gg/api/experimental/"
 TEAM = os.environ.get("HEXIUM_TEAM") or "potto007"
-CATEGORIES = ["Transportation", "Quality of Life", "Valheim 1.0", "Open Source"]
+CATEGORIES = [c.strip() for c in os.environ.get("HEXIUM_CATEGORIES", "").split(",") if c.strip()] or [
+    "Transportation", "Quality of Life", "Valheim 1.0", "Open Source"]
 
 
 def call(method, url, token=None, body=None, raw=None):
