@@ -2,13 +2,13 @@
 
 All notable changes to OttoBifrost.
 
-## Unreleased
+## v1.1.0
 
 - New `PreviewMode` setting in the `Preview` section. Not synced.
-- `StaticView`, the new default, takes one picture of the destination once the
-  objects around the arrival point are built, and renders nothing after that. Each
-  approach takes a new picture.
-- `LiveView` keeps the continuous, head-tracking preview from v1.0.0.
+- `LiveView`, the default, keeps the continuous, head-tracking preview from v1.0.0.
+- `StaticView` takes one picture of the destination once the objects around the
+  arrival point are built, and renders nothing after that. Each approach takes a
+  new picture.
 
 ## v1.0.0
 
