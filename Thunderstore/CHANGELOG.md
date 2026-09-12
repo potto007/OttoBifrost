@@ -5,21 +5,25 @@ All notable changes to OttoBifrost.
 ## v1.2.0
 
 - `StaticView` is now the default `PreviewMode`. v1.1.0 wrote `LiveView` into every
-  config file on first run, so a config file last saved by an earlier version moves
-  from `LiveView` to `StaticView` once, the first time v1.2.0 loads it, and the log
-  says so. After that the setting stays as you set it.
-
-- `StaticView` pictures shimmer and ripple, fade out at the rim, and are 30%
-  translucent.
-- `StaticView` no longer takes a picture while you are teleporting.
-- Fast teleports keep their own time. Server devcommands' "Debug mode fast teleport"
-  sets the teleport timer to 15 in debug mode, which handed a fast trip to vanilla
-  on its first frame, so you could land before the floors arrived.
-- Destinations that are already built cost less while you stand near them. The pass
-  that creates their objects slows to every 2 seconds once it finds nothing to do,
-  and speeds up again when their zones or objects change.
-- With `LogPerformance` on, "server reports complete" is logged once per change
-  instead of after every update.
+  config file the first time it ran, so a saved `LiveView` says nothing about what
+  you chose. The first time v1.2.0 loads a config file saved by an older version, it
+  switches `LiveView` to `StaticView` and logs the change. After that it leaves the
+  setting alone.
+- `StaticView` pictures shimmer and ripple, fade out toward the rim, and let 30% of
+  the portal behind them show through.
+- `StaticView` no longer takes a picture mid-teleport, when the far side is the area
+  you are leaving.
+- Fast teleports keep their own clock. In debug mode, Server devcommands' "Debug mode
+  fast teleport" sets the teleport timer to 15. The fast path read that as past its
+  8 second limit and handed the trip to vanilla on the first frame, so you could land
+  before the floors arrived.
+- Standing near built destinations costs less. The pass that creates their objects
+  ran every 0.2 s even when nothing was left to create. Now each empty pass doubles
+  the wait, up to 2 s, and any change to those zones or their objects brings it back
+  to 0.2 s.
+- With `LogPerformance` on, the log records "server reports complete" once per
+  change. The server repeats every state whenever your list of nearby portals
+  changes, and each repeat used to get its own line.
 
 ## v1.1.0
 
@@ -40,11 +44,11 @@ All notable changes to OttoBifrost.
   enough for their previews. The nearest only changes when another portal is 2 m
   closer.
 - Zones load ring by ring across all destinations and stay loaded while you stand
-  near. Objects come up in vanilla type order, terrain edits first, so nothing
+  near them. Objects come up in vanilla type order, terrain edits first, so nothing
   appears before the ground under it.
-- Faster teleports to a preloaded destination. The trip ends once the arrival area
-  is built and a floor is found, and vanilla takes over at the 8 second mark.
-  Dungeon doors keep vanilla behaviour.
+- Faster teleports to a preloaded destination. The trip ends once every object
+  around the arrival point exists and there is a floor under you, and vanilla takes
+  over at the 8 second mark. Dungeon doors keep vanilla behaviour.
 - With the mod on a dedicated server, the server also sends the objects around each
   destination you stand near and reports when one is complete. At most 8 per player,
   and only for portals within 30 m of that player.
