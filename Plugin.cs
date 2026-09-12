@@ -70,7 +70,7 @@ public class OttoBifrostPlugin : BaseUnityPlugin
         _ = ConfigSync.AddLockingConfigEntry(LockConfiguration);
         PreloadDestinations = BindSynced(GeneralSection, "PreloadDestinations", true, "Load the area around a portal's destination while you stand near the portal.");
         FastTeleport = BindSynced(GeneralSection, "FastTeleport", true, "Skip the vanilla wait when the destination is already loaded.");
-        PreviewMode = Config.Bind(PreviewSection, "PreviewMode", PreviewModes.LiveView,
+        PreviewMode = Config.Bind(PreviewSection, "PreviewMode", PreviewModes.StaticView,
             "StaticView shows one picture of the destination, taken once its objects are built, and renders nothing after that. " +
             "LiveView renders the nearest portal's destination continuously and follows your head. Not synced.");
         LogPerformance = Config.Bind(DebugSection, "LogPerformance", false, "Write a timing summary to the log every 5 seconds. Leave off in normal play. Not synced.");

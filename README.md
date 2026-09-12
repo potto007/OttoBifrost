@@ -19,13 +19,13 @@ trip between two built bases becomes a walk instead of a loading screen.
   round preview shows the arrival side, and both faces of the portal show the same
   place. The disc is sized for the wood arch, so it looks small on the stone portal.
   The preview has two modes, set with `PreviewMode`:
-  - `LiveView`, the default. The preview renders continuously and follows your head,
-    so the view shifts as you move.
-  - `StaticView`. Once the objects around the arrival point are built, the mod takes
-    one picture of the destination, facing the way you face when you arrive, and
-    shows it until you walk away. Each new approach takes a new picture. The picture
-    shimmers and ripples, fades out at its rim, and lets 30% of the portal behind it
-    show through.
+  - `StaticView`, the default. Once the objects around the arrival point are built,
+    the mod takes one picture of the destination, facing the way you face when you
+    arrive, and shows it until you walk away. Each new approach takes a new picture.
+    The picture shimmers and ripples, fades out at its rim, and lets 30% of the
+    portal behind it show through.
+  - `LiveView`. The preview renders continuously and follows your head, so the view
+    shifts as you move.
 - **Loading before you arrive.** Within 15 m of a portal the zones around its
   destination start to load. Past 10 m that is 3x3 zones, inside 10 m it is 5x5,
   and inside 5 m it is 7x7. The area grows over a few seconds, and objects at the
@@ -63,7 +63,7 @@ from the server.
 | OttoBifrost | `LockConfiguration` | `true` | Only server admins can change the synced settings. |
 | OttoBifrost | `PreloadDestinations` | `true` | Load the area around a portal's destination while you stand near the portal. Synced. |
 | OttoBifrost | `FastTeleport` | `true` | Skip the vanilla wait when the destination is already loaded. Synced. |
-| Preview | `PreviewMode` | `LiveView` | `StaticView` shows one picture of the destination, taken once its objects are built. `LiveView` renders the destination continuously and follows your head. Not synced. |
+| Preview | `PreviewMode` | `StaticView` | `StaticView` shows one picture of the destination, taken once its objects are built. `LiveView` renders the destination continuously and follows your head. Not synced. |
 | Debug | `LogPerformance` | `false` | Write a timing summary to the log every 5 seconds. Not synced. |
 
 ___________________________
