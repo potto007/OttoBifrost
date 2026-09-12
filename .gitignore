@@ -6,3 +6,5 @@ riderModule.iml
 .idea/
 .vs/
 OttoBifrost.sln.DotSettings.user
+.claude/
+.playwright-mcp/
