@@ -36,8 +36,9 @@ trip between two built bases becomes a walk instead of a loading screen.
   different portal only takes over as nearest once it is 2 m closer, so pacing
   around a hub room does not drag the load back and forth between bases.
 - **Faster teleports.** When the destination is preloaded, the vanilla wait is
-  skipped. The trip ends as soon as every object around the arrival point exists
-  and there is a floor under you. If that is already true you walk straight
+  skipped. The trip ends as soon as every object within 40 m of the arrival point
+  exists and there is a floor under you. The far edges of a big base can finish
+  building after you land. If that is already true you walk straight
   through. If it is not, the screen dims while the rest arrives, and at the vanilla
   8 second mark vanilla takes over. Dungeon doors are left alone.
 

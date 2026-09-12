@@ -3,12 +3,16 @@ using UnityEngine;
 
 namespace OttoBifrost.Patches;
 
-/// Ends a teleport to a preloaded destination as soon as the arrival area is ready, instead of
-/// after the fixed vanilla wait.
+/// Ends a teleport to a preloaded destination as soon as the objects around the arrival point
+/// exist, instead of after the fixed vanilla wait.
 ///
-/// IsAreaReady alone is not enough on a dedicated server: it passes before the server sends
-/// the area, and floors then appear after you land. So the teleport also waits until the
-/// server reports the destination complete, or the arrival object count stops changing.
+/// It waits for the objects within ZoneLoadPatches.PrimeRadius, not the whole 3x3 zones
+/// IsAreaReady checks. Vanilla creates a zone nearest the player first, so the outer objects of
+/// a big base can take seconds more, and they are out of sight on landing.
+///
+/// Built objects alone are not enough on a dedicated server: they exist before the server sends
+/// the rest of the area, and floors then appear after you land. So the teleport also waits until
+/// the server reports the destination complete, or the arrival object count stops changing.
 [HarmonyPatch]
 internal static class TeleportPatches
 {
@@ -101,10 +105,11 @@ internal static class TeleportPatches
         TrackArrivalObjects(target);
         bool dataSettled = _serverComplete ||
                            (Time.time - _movedAt >= ServerReactionTime && Time.time - _arrivalChangedAt >= ArrivalStableTime);
-        bool areaReady = ZNetScene.instance.IsAreaReady(target);
+        // Full circle: the player can turn round on landing.
+        bool nearBuilt = ZoneLoadPatches.AreNearObjectsBuilt(target, Vector3.forward, ZoneLoadPatches.PrimeRadius);
         bool floorFound = ZoneSystem.instance.FindFloor(target, out float floorHeight);
 
-        if (areaReady && dataSettled && (floorFound || timer > FloorSearchTimeout))
+        if (nearBuilt && dataSettled && (floorFound || timer > FloorSearchTimeout))
         {
             if (floorFound)
                 __instance.transform.position = new Vector3(target.x, floorHeight, target.z);
@@ -112,14 +117,14 @@ internal static class TeleportPatches
             __instance.m_teleporting = false;
             __instance.ResetCloth();
             _fastTrip = false;
-            LogOutcome("finished", areaReady, dataSettled, floorFound);
+            LogOutcome("finished", target, nearBuilt, dataSettled, floorFound);
             return false;
         }
 
         if (timer > FallbackToVanillaTime)
         {
             _fastTrip = false;
-            LogOutcome("handed over to vanilla", areaReady, dataSettled, floorFound);
+            LogOutcome("handed over to vanilla", target, nearBuilt, dataSettled, floorFound);
             return true;
         }
 
@@ -170,13 +175,15 @@ internal static class TeleportPatches
         _arrivalChangedAt = Time.time;
     }
 
-    private static void LogOutcome(string outcome, bool areaReady, bool dataSettled, bool floorFound)
+    private static void LogOutcome(string outcome, Vector3 target, bool nearBuilt, bool dataSettled, bool floorFound)
     {
         if (!PerfStats.Enabled)
             return;
+        // Area ready shows whether the whole 3x3 zones were built too, which vanilla waits for.
+        bool areaReady = ZNetScene.instance.IsAreaReady(target);
         OttoBifrostPlugin.Log.LogInfo(
             $"Teleport {outcome} after {Time.time - _startedAt:F2} s: server reports complete {_serverComplete}, " +
-            $"area ready {areaReady}, data settled {dataSettled}, floor {floorFound}, " +
+            $"near objects built {nearBuilt}, area ready {areaReady}, data settled {dataSettled}, floor {floorFound}, " +
             $"arrival objects {_arrivalObjects} ({_arrivalObjects - _arrivalObjectsAtMove} received since the move)");
     }
 

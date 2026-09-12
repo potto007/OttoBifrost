@@ -10,6 +10,10 @@ All notable changes to OttoBifrost.
   loaded. The delay before each picture dropped from 0.5 s to 0.2 s.
 - With `LogPerformance` on, each `StaticView` picture logs how long after you came in
   range it was taken, and whether it covers the near objects or the whole area.
+- Fast teleports end once the objects within 40 m of the arrival point exist, not
+  every object in the 3x3 zones around it. Taking a portal a few seconds after
+  landing used to wait 1-3 s behind the loading screen while the far edges of the
+  base built.
 
 ## v1.2.0
 

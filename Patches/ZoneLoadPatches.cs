@@ -22,6 +22,8 @@ internal static class ZoneLoadPatches
 
     private static readonly List<ZDO> Candidates = new();
     private static readonly HashSet<ZoneSystem.SectorIndex> CandidateSectors = new();
+    private static readonly List<ZDO> NearObjects = new();
+    private static readonly HashSet<ZoneSystem.SectorIndex> NearSectors = new();
     private static float _nextPrimeCheck;
     private static float _nextPrimeTime;
     private static float _primeWait = PrimeInterval;
@@ -273,6 +275,61 @@ internal static class ZoneLoadPatches
         }
 
         return key;
+    }
+
+    /// Every object within PrimeRadius of origin exists, apart from those more than
+    /// behindAllowance behind it along forward. These are the objects the destination pass
+    /// creates first, and vanilla creates the rest of a zone nearest the player first, so at a
+    /// big base this passes well before IsAreaReady, which waits for the whole 3x3 zones.
+    internal static bool AreNearObjectsBuilt(Vector3 origin, Vector3 forward, float behindAllowance)
+    {
+        ZoneSystem zoneSystem = ZoneSystem.instance;
+        ZNetScene scene = ZNetScene.instance;
+        if (zoneSystem == null || scene == null || ZDOMan.instance == null)
+            return false;
+
+        float halfZone = zoneSystem.m_zoneSize * 0.5f;
+        float radiusSqr = PrimeRadius * PrimeRadius;
+        Vector2s centre = ZoneSystem.GetZone(origin);
+
+        NearObjects.Clear();
+        NearSectors.Clear();
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                Vector2s zone = new(centre.x + dx, centre.y + dy);
+                Vector3 zonePos = ZoneSystem.GetZonePos(zone);
+                float gapX = Mathf.Max(Mathf.Abs(origin.x - zonePos.x) - halfZone, 0f);
+                float gapZ = Mathf.Max(Mathf.Abs(origin.z - zonePos.z) - halfZone, 0f);
+                if (gapX * gapX + gapZ * gapZ > radiusSqr)
+                    continue;
+                // An unloaded zone has no ground yet.
+                if (!zoneSystem.m_zones.ContainsKey(zone))
+                    return false;
+                ZDOMan.instance.FindObjects(zone, NearObjects, NearSectors);
+            }
+        }
+
+        bool built = true;
+        foreach (ZDO zdo in NearObjects)
+        {
+            if (!zdo.IsValid() || !scene.IsPrefabZDOValid(zdo) || scene.HaveInstance(zdo))
+                continue;
+
+            // A terrain edit shapes its whole zone, so its position does not matter.
+            Vector3 offset = zdo.GetPosition() - origin;
+            offset.y = 0f;
+            if (zdo.Type != ZDO.ObjectType.Terrain &&
+                (offset.sqrMagnitude > radiusSqr || Vector3.Dot(offset, forward) < -behindAllowance))
+                continue;
+
+            built = false;
+            break;
+        }
+
+        NearObjects.Clear();
+        return built;
     }
 
     private static readonly bool[] PortalPasses = { true, false };

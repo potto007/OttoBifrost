@@ -68,8 +68,6 @@ public sealed class PortalWindow : MonoBehaviour
     private static int _liveFrame = -1;
     // One static picture per frame, so walking into a hub room does not render every portal at once.
     private static int _captureFrame = -1;
-    private static readonly List<ZDO> NearObjects = new();
-    private static readonly HashSet<ZoneSystem.SectorIndex> NearSectors = new();
     private static Mesh? _discMesh;
     // Every static window shares one ripple mesh, animated once per frame.
     private static Mesh? _rippleMesh;
@@ -323,59 +321,9 @@ public sealed class PortalWindow : MonoBehaviour
             return StaticStage.None;
         if (ZNetScene.instance.IsAreaReady(arrival))
             return StaticStage.Full;
-        return _captured < StaticStage.Near && AreNearObjectsBuilt(far) ? StaticStage.Near : StaticStage.None;
-    }
-
-    /// Every object within the destination pass's radius of the far portal exists, apart from
-    /// those behind it. At a big base this passes well before the 3x3 zones IsAreaReady checks.
-    private static bool AreNearObjectsBuilt(Transform far)
-    {
-        ZoneSystem zoneSystem = ZoneSystem.instance;
-        ZNetScene scene = ZNetScene.instance;
-        Vector3 origin = far.position;
-        Vector3 forward = far.forward;
-        float halfZone = zoneSystem.m_zoneSize * 0.5f;
-        float radiusSqr = ZoneLoadPatches.PrimeRadius * ZoneLoadPatches.PrimeRadius;
-        Vector2s centre = ZoneSystem.GetZone(origin);
-
-        NearObjects.Clear();
-        NearSectors.Clear();
-        for (int dy = -1; dy <= 1; dy++)
-        {
-            for (int dx = -1; dx <= 1; dx++)
-            {
-                Vector2s zone = new(centre.x + dx, centre.y + dy);
-                Vector3 zonePos = ZoneSystem.GetZonePos(zone);
-                float gapX = Mathf.Max(Mathf.Abs(origin.x - zonePos.x) - halfZone, 0f);
-                float gapZ = Mathf.Max(Mathf.Abs(origin.z - zonePos.z) - halfZone, 0f);
-                if (gapX * gapX + gapZ * gapZ > radiusSqr)
-                    continue;
-                // An unloaded zone has no ground to show yet.
-                if (!zoneSystem.m_zones.ContainsKey(zone))
-                    return false;
-                ZDOMan.instance.FindObjects(zone, NearObjects, NearSectors);
-            }
-        }
-
-        bool built = true;
-        foreach (ZDO zdo in NearObjects)
-        {
-            if (!zdo.IsValid() || !scene.IsPrefabZDOValid(zdo) || scene.HaveInstance(zdo))
-                continue;
-
-            // A terrain edit shapes its whole zone, so its position does not matter.
-            Vector3 offset = zdo.GetPosition() - origin;
-            offset.y = 0f;
-            if (zdo.Type != ZDO.ObjectType.Terrain &&
-                (offset.sqrMagnitude > radiusSqr || Vector3.Dot(offset, forward) < -StaticBehindAllowance))
-                continue;
-
-            built = false;
-            break;
-        }
-
-        NearObjects.Clear();
-        return built;
+        return _captured < StaticStage.Near && ZoneLoadPatches.AreNearObjectsBuilt(far.position, far.forward, StaticBehindAllowance)
+            ? StaticStage.Near
+            : StaticStage.None;
     }
 
     private void ResetStaticCapture()
