@@ -33,6 +33,9 @@ internal static class DestinationSync
 
     private static readonly HashSet<ZDOID> TrackedRemotePortals = new();
     private static readonly Dictionary<ZDOID, bool> DestinationComplete = new();
+    // For the log only. The server repeats every state after each new list, and
+    // DestinationComplete is cleared on each send, so it cannot tell a repeat from a change.
+    private static readonly Dictionary<ZDOID, bool> LoggedStates = new();
     private static bool _dirty;
     private static float _lastSendTime = float.MinValue;
 
@@ -47,6 +50,7 @@ internal static class DestinationSync
         if (remotePortal != ZDOID.None && TrackedRemotePortals.Remove(remotePortal))
         {
             DestinationComplete.Remove(remotePortal);
+            LoggedStates.Remove(remotePortal);
             _dirty = true;
         }
     }
@@ -132,8 +136,11 @@ internal static class DestinationSync
         if (TrackedRemotePortals.Contains(id))
             DestinationComplete[id] = complete;
 
-        if (PerfStats.Enabled)
+        if (PerfStats.Enabled && (!LoggedStates.TryGetValue(id, out bool logged) || logged != complete))
+        {
+            LoggedStates[id] = complete;
             OttoBifrostPlugin.Log.LogInfo($"Destination {id}: server reports {(complete ? "complete" : "still sending")}");
+        }
     }
 
     /// Counts the same 3x3 zones that vanilla IsAreaReady checks.
@@ -315,6 +322,7 @@ internal static class DestinationSync
     {
         TrackedRemotePortals.Clear();
         DestinationComplete.Clear();
+        LoggedStates.Clear();
         _dirty = false;
         _lastSendTime = float.MinValue;
         PeerDestinations.Clear();
