@@ -33,7 +33,9 @@ internal static class Destinations
     private static readonly List<PortalRequest> Others = new();
     private static readonly List<Destination> Pending = new();
     private static readonly Comparison<PortalRequest> ByDistance = (a, b) => a.Distance.CompareTo(b.Distance);
+    private static readonly HashSet<ZDOID> DeferredReleases = new();
     private static ZDOID _nearest = ZDOID.None;
+    private static bool _teleporting;
     private static bool _holdingArrival;
     private static Vector3 _arrival;
     private static float _arrivalReleaseTime = float.MaxValue;
@@ -52,6 +54,7 @@ internal static class Destinations
             Requests.Add(portal, request);
         }
 
+        DeferredReleases.Remove(portal);
         request.Position = farEnd;
         request.Radius = radius;
         request.Distance = distance;
@@ -60,24 +63,36 @@ internal static class Destinations
 
     internal static void Release(ZDOID portal)
     {
+        // The source portal unloads behind the player during a teleport. Its request holds the
+        // arrival area, so it must last until the player has landed.
+        if (_teleporting)
+        {
+            if (Requests.ContainsKey(portal))
+                DeferredReleases.Add(portal);
+            return;
+        }
+
         if (Requests.Remove(portal))
             Rebuild();
     }
 
-    /// Held from the start of a teleport, because the source portal unloads behind the player
-    /// and takes its request with it before the player has landed.
-    internal static void HoldArrival(Vector3 target)
+    internal static void BeginTeleport()
     {
-        _holdingArrival = true;
-        _arrival = target;
-        _arrivalReleaseTime = float.MaxValue;
-        Rebuild();
+        _teleporting = true;
     }
 
-    internal static void ReleaseArrivalAfter(float seconds)
+    /// The landing spot stays loaded for holdSeconds and loads before every portal destination.
+    internal static void EndTeleport(Vector3 landing, float holdSeconds)
     {
-        if (_holdingArrival)
-            _arrivalReleaseTime = Time.time + seconds;
+        _teleporting = false;
+        foreach (ZDOID portal in DeferredReleases)
+            Requests.Remove(portal);
+        DeferredReleases.Clear();
+
+        _holdingArrival = true;
+        _arrival = landing;
+        _arrivalReleaseTime = Time.time + holdSeconds;
+        Rebuild();
     }
 
     internal static void Tick()
@@ -117,6 +132,8 @@ internal static class Destinations
     internal static void Clear()
     {
         Requests.Clear();
+        DeferredReleases.Clear();
+        _teleporting = false;
         _nearest = ZDOID.None;
         _holdingArrival = false;
         _arrivalReleaseTime = float.MaxValue;

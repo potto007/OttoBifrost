@@ -12,10 +12,14 @@ namespace OttoBifrost.Patches;
 [HarmonyPatch]
 internal static class TeleportPatches
 {
-    // Vanilla holds a distant teleport until its timer passes 8 s. A hand-over at that mark
-    // leaves vanilla in the state it expects, so a fast teleport is never slower than vanilla.
-    private const float VanillaDistantDelay = 8f;
-    private const float FloorSearchTimeout = 1f;
+    // Vanilla waits until the timer passes 2 s before it moves the player. Starting there skips
+    // that wait, and the thresholds below keep their vanilla meaning.
+    private const float SkipVanillaWait = 2.1f;
+    private const float MinimumTeleportTime = 0.5f;
+    private const float FloorSearchTimeout = 3f;
+    // Vanilla holds a distant teleport until its timer passes 8. A hand-over at that mark leaves
+    // vanilla in the state it expects, so a fast teleport is never slower than vanilla.
+    private const float FallbackToVanillaTime = 8f;
     private const float ServerReactionTime = 1f;
     private const float ArrivalStableTime = 0.5f;
     private const float PreloadedTolerance = 10f;
@@ -37,6 +41,9 @@ internal static class TeleportPatches
         if (!__result || __instance != Player.m_localPlayer)
             return;
 
+        _awaitingArrival = true;
+        Destinations.BeginTeleport();
+
         // Dungeon doors are not distant teleports. Vanilla can send the player back from those
         // with "portal blocked", which the fast path would skip.
         _fastTrip = distantTeleport && OttoBifrostPlugin.FastTeleport.Value && Destinations.IsNear(pos, PreloadedTolerance);
@@ -45,11 +52,12 @@ internal static class TeleportPatches
         _startedAt = Time.time;
         _movedAt = -1f;
         _arrivalObjects = -1;
-        _awaitingArrival = true;
-        Destinations.HoldArrival(pos);
 
         if (PerfStats.Enabled)
             OttoBifrostPlugin.Log.LogInfo($"Teleport start: fast path {_fastTrip}, server reports destination complete {_serverComplete}");
+
+        if (_fastTrip)
+            __instance.m_teleportTimer = SkipVanillaWait;
     }
 
     [HarmonyPrefix]
@@ -67,12 +75,16 @@ internal static class TeleportPatches
 
         __instance.m_teleportCooldown = 0f;
         __instance.m_teleportTimer += dt;
+        if (__instance.m_teleportTimer <= MinimumTeleportTime)
+            return false;
+
         Vector3 target = __instance.m_teleportTargetPos;
         HoldAtTarget(__instance);
 
         if (_movedAt < 0f)
         {
             _movedAt = Time.time;
+            MovePlayerZdo(__instance, target);
             // ZNet otherwise sends the new position within 2 s, and until then the server keeps
             // sending the area the player left.
             if (ZNet.instance != null)
@@ -88,7 +100,7 @@ internal static class TeleportPatches
         bool areaReady = ZNetScene.instance.IsAreaReady(target);
         bool floorFound = ZoneSystem.instance.FindFloor(target, out float floorHeight);
 
-        if (areaReady && dataSettled && (floorFound || Time.time - _movedAt > FloorSearchTimeout))
+        if (areaReady && dataSettled && (floorFound || __instance.m_teleportTimer > FloorSearchTimeout))
         {
             if (floorFound)
                 __instance.transform.position = new Vector3(target.x, floorHeight, target.z);
@@ -100,7 +112,7 @@ internal static class TeleportPatches
             return false;
         }
 
-        if (__instance.m_teleportTimer > VanillaDistantDelay)
+        if (__instance.m_teleportTimer > FallbackToVanillaTime)
         {
             _fastTrip = false;
             LogOutcome("handed over to vanilla", areaReady, dataSettled, floorFound);
@@ -118,7 +130,7 @@ internal static class TeleportPatches
             return;
 
         _awaitingArrival = false;
-        Destinations.ReleaseArrivalAfter(ArrivalHoldSeconds);
+        Destinations.EndTeleport(__instance.transform.position, ArrivalHoldSeconds);
     }
 
     private static void HoldAtTarget(Player player)
@@ -129,6 +141,17 @@ internal static class TeleportPatches
         if (EnvMan.instance != null)
             EnvMan.instance.ForceInstantEnvironmentSwitch();
         player.SetLookDir(player.m_teleportTargetRot * Vector3.forward);
+    }
+
+    // ZNetScene destroys every instance whose ZDO is outside the area around the reference
+    // position, and the player's ZDO normally follows the rigidbody only in LateUpdate. Without
+    // this, a create-destroy pass between the move and LateUpdate destroys the local player.
+    private static void MovePlayerZdo(Player player, Vector3 target)
+    {
+        player.m_body.position = target;
+        ZSyncTransform sync = player.GetComponent<ZSyncTransform>();
+        if (sync != null)
+            sync.SyncNow();
     }
 
     private static void TrackArrivalObjects(Vector3 target)
