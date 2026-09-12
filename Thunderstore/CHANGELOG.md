@@ -4,10 +4,10 @@ All notable changes to OttoBifrost.
 
 ## v1.2.0
 
-- `StaticView` is now the default `PreviewMode`. The config file keeps the value it
-  already holds, and v1.1.0 wrote `LiveView` into it on first run. So an install that
-  ran v1.1.0 stays on `LiveView` until you change the setting. A new install, or one
-  coming from v1.0.0, starts on `StaticView`.
+- `StaticView` is now the default `PreviewMode`. v1.1.0 wrote `LiveView` into every
+  config file on first run, so a config file last saved by an earlier version moves
+  from `LiveView` to `StaticView` once, the first time v1.2.0 loads it, and the log
+  says so. After that the setting stays as you set it.
 
 - `StaticView` pictures shimmer and ripple, fade out at the rim, and are 30%
   translucent.
