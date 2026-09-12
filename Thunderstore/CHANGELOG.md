@@ -2,6 +2,14 @@
 
 All notable changes to OttoBifrost.
 
+## Unreleased
+
+- New `PreviewMode` setting in the `Preview` section. Not synced.
+- `StaticView`, the new default, takes one picture of the destination once the
+  objects around the arrival point are built, and renders nothing after that. Each
+  approach takes a new picture.
+- `LiveView` keeps the continuous, head-tracking preview from v1.0.0.
+
 ## v1.0.0
 
 - First release, for Valheim 1.0.12 and BepInEx 5.4.2350.

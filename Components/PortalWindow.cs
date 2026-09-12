@@ -7,8 +7,11 @@ using Object = UnityEngine.Object;
 
 namespace OttoBifrost.Components;
 
-/// Shows the far end of the portal on a disc in its opening. Only the window nearest the
-/// player renders live, to bound the render cost. The others keep their last frame.
+/// Shows the far end of the portal on a disc in its opening.
+///
+/// StaticView takes one picture per approach, once the objects at the far end are built, and
+/// renders nothing after that. LiveView renders only the window nearest the player, to bound
+/// the render cost. The others keep their last frame.
 public sealed class PortalWindow : MonoBehaviour
 {
     private const float MaxViewDistance = 12f;
@@ -29,11 +32,23 @@ public sealed class PortalWindow : MonoBehaviour
     private const float NearClipBlocked = 0.1f;
     private const float CameraRadius = 0.35f;
     private const float WaterClearance = 0.3f;
+    // A static picture is taken from head height just behind the far portal, facing the way the
+    // player faces on arrival, tilted down a little so the ground shows.
+    private const float StaticEyeHeight = 1.8f;
+    private const float StaticPullBack = 1.5f;
+    private const float StaticPitch = 8f;
+    private const float StaticCheckInterval = 0.2f;
+    // Without the mod on the server, "built" means the arrival object count held still this long.
+    private const float StaticSettleTime = 1f;
+    // Lets terrain edits rebuild their heightmaps before the picture is taken.
+    private const float StaticCaptureDelay = 0.5f;
 
     private static readonly List<PortalWindow> Windows = new();
     private static readonly Quaternion HalfTurn = Quaternion.Euler(0f, 180f, 0f);
     private static PortalWindow? _live;
     private static int _liveFrame = -1;
+    // One static picture per frame, so walking into a hub room does not render every portal at once.
+    private static int _captureFrame = -1;
     private static Mesh? _discMesh;
     private static int _blockMask;
 
@@ -48,6 +63,13 @@ public sealed class PortalWindow : MonoBehaviour
     private bool _viewerInFront = true;
     private bool _hasFrame;
     private float _nextRenderTime;
+    private bool _staticView;
+    private bool _captureStale = true;
+    private ZDOID _frameFarEnd = ZDOID.None;
+    private float _nextStaticCheck;
+    private int _settleCount = -1;
+    private float _settleChangedAt;
+    private float _builtSince = -1f;
     private TeleportWorld? _hiddenPortal;
     private Renderer[] _hiddenRenderers = Array.Empty<Renderer>();
     private bool[] _hiddenWasEnabled = Array.Empty<bool>();
@@ -90,7 +112,15 @@ public sealed class PortalWindow : MonoBehaviour
             return;
 
         Vector3 eye = player.GetEyePoint();
-        SelectLiveWindow(eye);
+        bool staticView = OttoBifrostPlugin.PreviewMode.Value == OttoBifrostPlugin.PreviewModes.StaticView;
+        if (staticView != _staticView)
+        {
+            // A frame from the other mode stays up until the new mode replaces it.
+            _staticView = staticView;
+            _captureStale = true;
+        }
+        if (!staticView)
+            SelectLiveWindow(eye);
 
         bool linked = IsLinked();
         float distance = Vector3.Distance(eye, transform.position);
@@ -99,6 +129,9 @@ public sealed class PortalWindow : MonoBehaviour
             SetDiscVisible(false);
             if (!linked)
                 _hasFrame = false;
+            // Each approach takes a new picture, so it follows changes at the far end and the
+            // time of day.
+            ResetStaticCapture();
             return;
         }
 
@@ -108,6 +141,12 @@ public sealed class PortalWindow : MonoBehaviour
         // The stone portal model faces the other way from the wood portal model.
         ZDO? zdo = Portals.ZdoOf(_portal);
         _viewerInFront = zdo != null && Portals.IsStonePortal(zdo) ? frontSide : !frontSide;
+
+        if (staticView)
+        {
+            UpdateStaticView(main, zdo);
+            return;
+        }
 
         if (_live != this)
         {
@@ -159,15 +198,90 @@ public sealed class PortalWindow : MonoBehaviour
 
     private static TeleportWorld? FindFarPortal(ZDO? zdo)
     {
-        ZDO? farEnd = zdo != null ? Portals.FarEnd(zdo) : null;
+        return InstanceOf(zdo != null ? Portals.FarEnd(zdo) : null);
+    }
+
+    private static TeleportWorld? InstanceOf(ZDO? farEnd)
+    {
         ZNetView? view = farEnd != null && ZNetScene.instance != null ? ZNetScene.instance.FindInstance(farEnd) : null;
         return view != null ? view.GetComponent<TeleportWorld>() : null;
     }
 
+    private void UpdateStaticView(Camera main, ZDO? zdo)
+    {
+        ZDO? farEnd = zdo != null ? Portals.FarEnd(zdo) : null;
+        // A tag change that connects the portal somewhere else makes the picture wrong.
+        if (farEnd != null && farEnd.m_uid != _frameFarEnd)
+        {
+            _hasFrame = false;
+            _frameFarEnd = farEnd.m_uid;
+            ResetStaticCapture();
+        }
+
+        SetDiscVisible(_hasFrame);
+        if (!_captureStale || farEnd == null || Time.time < _nextStaticCheck)
+            return;
+        _nextStaticCheck = Time.time + StaticCheckInterval;
+
+        TeleportWorld? farPortal = InstanceOf(farEnd);
+        if (farPortal == null || !IsFarEndBuilt(farEnd, farPortal))
+        {
+            _builtSince = -1f;
+            return;
+        }
+
+        if (_builtSince < 0f)
+            _builtSince = Time.time;
+        if (Time.time - _builtSince < StaticCaptureDelay || _captureFrame == Time.frameCount)
+            return;
+
+        _captureFrame = Time.frameCount;
+        CaptureStatic(main, farPortal);
+        _captureStale = false;
+        SetDiscVisible(true);
+    }
+
+    /// The test a fast teleport makes before it lands the player: every object around the
+    /// arrival point exists, and the server has nothing left to send or the count held still.
+    private bool IsFarEndBuilt(ZDO farEnd, TeleportWorld farPortal)
+    {
+        if (ZoneSystem.instance == null || ZNetScene.instance == null)
+            return false;
+
+        Transform far = farPortal.transform;
+        // Vanilla TeleportWorld.Teleport lands the player here.
+        Vector3 arrival = far.position + far.forward * farPortal.m_exitDistance + Vector3.up;
+        int known = DestinationSync.CountKnownObjects(arrival);
+        if (known != _settleCount)
+        {
+            _settleCount = known;
+            _settleChangedAt = Time.time;
+        }
+
+        bool settled = DestinationSync.IsDestinationComplete(farEnd.m_uid) || Time.time - _settleChangedAt >= StaticSettleTime;
+        return settled && ZNetScene.instance.IsAreaReady(arrival);
+    }
+
+    private void ResetStaticCapture()
+    {
+        _captureStale = true;
+        _settleCount = -1;
+        _builtSince = -1f;
+    }
+
+    private void CaptureStatic(Camera main, TeleportWorld farPortal)
+    {
+        Transform far = farPortal.transform;
+        Vector3 eye = far.position + Vector3.up * StaticEyeHeight;
+        Vector3 position = eye - far.forward * StaticPullBack;
+        Quaternion rotation = Quaternion.LookRotation(far.forward, Vector3.up) * Quaternion.Euler(StaticPitch, 0f, 0f);
+        // The far portal may have gained its own discs since the renderers were last collected.
+        _hiddenPortal = null;
+        RenderFrom(main, eye, position, rotation, farPortal);
+    }
+
     private void Render(Camera main, Vector3 eye, Transform here, TeleportWorld farPortal)
     {
-        Camera camera = EnsureCamera(main);
-
         // Seen from the front, the viewer comes out behind the far portal and looks through its
         // front, so the mapping turns half a circle. Seen from the back, the viewer is already
         // on the arrival side.
@@ -177,6 +291,13 @@ public sealed class PortalWindow : MonoBehaviour
         Vector3 position = map.MultiplyPoint3x4(main.transform.position);
         Vector3 forward = map.MultiplyVector(main.transform.forward);
         Vector3 up = map.MultiplyVector(main.transform.up);
+        RenderFrom(main, farEye, position, Quaternion.LookRotation(forward, up), farPortal);
+    }
+
+    /// Pulls the camera in front of anything between farEye and position, then renders.
+    private void RenderFrom(Camera main, Vector3 farEye, Vector3 position, Quaternion rotation, TeleportWorld farPortal)
+    {
+        Camera camera = EnsureCamera(main);
 
         float nearClip = NearClip;
         Vector3 offset = position - farEye;
@@ -191,7 +312,7 @@ public sealed class PortalWindow : MonoBehaviour
         if (position.y < waterLine)
             position.y = waterLine;
 
-        camera.transform.SetPositionAndRotation(position, Quaternion.LookRotation(forward, up));
+        camera.transform.SetPositionAndRotation(position, rotation);
         camera.fieldOfView = main.fieldOfView;
         camera.nearClipPlane = nearClip;
         camera.farClipPlane = Mathf.Min(main.farClipPlane, FarClip);

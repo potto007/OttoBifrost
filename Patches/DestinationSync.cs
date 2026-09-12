@@ -91,6 +91,14 @@ internal static class DestinationSync
             ZNet.instance.m_periodicSendTimer = 2f;
     }
 
+    /// Always true on the server. False on a client whose server does not run the mod.
+    internal static bool IsDestinationComplete(ZDOID remotePortal)
+    {
+        if (ZNet.instance == null || ZNet.instance.IsServer())
+            return true;
+        return DestinationComplete.TryGetValue(remotePortal, out bool complete) && complete;
+    }
+
     /// Always true on the server, because a server already holds every object.
     internal static bool IsDestinationComplete(Vector3 teleportTarget)
     {
