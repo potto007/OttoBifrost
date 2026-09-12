@@ -81,6 +81,13 @@ jobs:
           files: ${{ steps.manifest.outputs.zip_file }}
           generate_release_notes: true
 
+      # Runs before the Thunderstore action, which removes the zip from the workspace.
+      - name: Publish the package to Hexium
+        env:
+          HEXIUM_TOKEN: ${{ secrets.HEXIUM_TOKEN }}
+          HEXIUM_TEAM: ${{ vars.HEXIUM_TEAM }}
+        run: python3 .github/scripts/hexium_upload.py "${{ steps.manifest.outputs.zip_file }}"
+
       - name: Publish the package to Thunderstore
         uses: GreenTF/upload-thunderstore-package@v4.3
         with:
@@ -97,9 +104,3 @@ jobs:
             tweaks
             client-side
             server-side
-
-      - name: Publish the package to Hexium
-        env:
-          HEXIUM_TOKEN: ${{ secrets.HEXIUM_TOKEN }}
-          HEXIUM_TEAM: ${{ vars.HEXIUM_TEAM }}
-        run: python3 .github/scripts/hexium_upload.py "${{ steps.manifest.outputs.zip_file }}"
