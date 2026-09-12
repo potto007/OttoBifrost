@@ -97,3 +97,9 @@ jobs:
             tweaks
             client-side
             server-side
+
+      - name: Publish the package to Hexium
+        env:
+          HEXIUM_TOKEN: ${{ secrets.HEXIUM_TOKEN }}
+          HEXIUM_TEAM: ${{ vars.HEXIUM_TEAM }}
+        run: python3 .github/scripts/hexium_upload.py "${{ steps.manifest.outputs.zip_file }}"

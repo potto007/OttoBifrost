@@ -61,7 +61,8 @@ game.
 ___________________________
 #### Installation (automatic)
 
-Use r2modman or the Thunderstore Mod Manager. Search for OttoBifrost and install.
+Use Gale, r2modman or the Thunderstore Mod Manager. OttoBifrost is on Thunderstore
+and on Hexium. Search for it and install.
 ___________________________
 
 #### Servers
