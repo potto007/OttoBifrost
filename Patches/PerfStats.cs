@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Threading;
 using HarmonyLib;
 
 namespace OttoBifrost.Patches;
@@ -25,6 +26,9 @@ internal static class PerfStats
     internal static float ZoneWaitTotal;
     internal static float ZoneWaitMax;
     internal static int TerrainQueueMax;
+    // Written on vanilla's heightmap thread, so only through Interlocked.
+    private static int _terrainBuilds;
+    private static long _terrainBuildTicks;
     internal static long ZonePatchTicks;
     internal static long SectorPatchTicks;
     internal static int ForcedCreates;
@@ -74,12 +78,15 @@ internal static class PerfStats
         float avgFrameMs = _windowTime * 1000f / _frames;
         string previewAvg = PreviewRenders > 0 ? Ms(PreviewRenderTicks / PreviewRenders) : "0.0";
         float zoneWaitAvg = ZoneWaits > 0 ? ZoneWaitTotal / ZoneWaits : 0f;
+        long terrainTicks = Interlocked.Read(ref _terrainBuildTicks);
+        double terrainBusy = terrainTicks * 100.0 / Stopwatch.Frequency / _windowTime;
         OttoBifrostPlugin.Log.LogInfo(
             $"Perf {_windowTime:F1}s: frames {_frames} avg {avgFrameMs:F1} ms worst {_worstFrame * 1000f:F1} ms" +
             $" | destinations {Destinations.Active.Length}, nearest switches {NearestSwitches}" +
             $" | preview renders {PreviewRenders} avg {previewAvg} ms max {Ms(PreviewRenderMaxTicks)} ms" +
             $" | zones spawned {ZonesSpawned} (zone patch {Ms(ZonePatchTicks)} ms)" +
-            $", terrain request to spawn avg {zoneWaitAvg:F2} s max {ZoneWaitMax:F2} s over {ZoneWaits}, terrain queue max {TerrainQueueMax}" +
+            $", wait at front of line avg {zoneWaitAvg:F2} s max {ZoneWaitMax:F2} s over {ZoneWaits}" +
+            $" | terrain thread {Interlocked.Exchange(ref _terrainBuilds, 0)} builds, {Ms(terrainTicks)} ms, busy {terrainBusy:F0}%, queue max {TerrainQueueMax}" +
             $" | sector patch {Ms(SectorPatchTicks)} ms" +
             $" | forced creates {ForcedCreates} ({Ms(CreatePatchTicks)} ms)" +
             $" | heightmap force {HeightmapForceCalls} calls, {HeightmapsForced} rebuilt, {Ms(HeightmapForceTicks)} ms total, max {Ms(HeightmapForceMaxTicks)} ms" +
@@ -99,7 +106,8 @@ internal static class PerfStats
             PreviewRenderMaxTicks = elapsed;
     }
 
-    /// seconds runs from the first terrain request for a destination zone to its spawn.
+    /// seconds runs from a destination zone reaching the front of the need order to its spawn.
+    /// With its terrain built ahead, that is the ticks spent waiting for vanilla's own zones.
     internal static void AddZoneWait(float seconds)
     {
         ZoneWaits++;
@@ -121,6 +129,8 @@ internal static class PerfStats
         ZoneWaitTotal = 0f;
         ZoneWaitMax = 0f;
         TerrainQueueMax = 0;
+        Interlocked.Exchange(ref _terrainBuilds, 0);
+        Interlocked.Exchange(ref _terrainBuildTicks, 0L);
         ZonePatchTicks = 0L;
         SectorPatchTicks = 0L;
         ForcedCreates = 0;
@@ -132,6 +142,26 @@ internal static class PerfStats
         HeightmapForceMaxTicks = 0L;
         ServerObjectsAppended = 0;
         ServerSyncTicks = 0L;
+    }
+
+    /// Runs on vanilla's heightmap thread, which builds the terrain data for every zone one at a
+    /// time. Its busy share shows whether more terrain threads could load zones faster.
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(HeightmapBuilder), nameof(HeightmapBuilder.Build))]
+    private static void HeightmapBuilderBuildPrefix(out long __state)
+    {
+        __state = Begin();
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(HeightmapBuilder), nameof(HeightmapBuilder.Build))]
+    private static void HeightmapBuilderBuildPostfix(long __state)
+    {
+        long elapsed = Elapsed(__state);
+        if (elapsed == 0L)
+            return;
+        Interlocked.Increment(ref _terrainBuilds);
+        Interlocked.Add(ref _terrainBuildTicks, elapsed);
     }
 
     /// Ship, Vagon and SnapToGround call ForceGenerateAll from Awake, which rebuilds every

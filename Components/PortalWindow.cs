@@ -97,6 +97,10 @@ public sealed class PortalWindow : MonoBehaviour
     private float _settleChangedAt;
     private float _readySince = -1f;
     private float _approachedAt = -1f;
+    // When each thing a picture waits for first became true, for the perf log.
+    private float _farFoundAt = -1f;
+    private float _nearZonesAt = -1f;
+    private float _nearBuiltAt = -1f;
 
     private enum StaticStage
     {
@@ -274,6 +278,8 @@ public sealed class PortalWindow : MonoBehaviour
         _nextStaticCheck = Time.time + StaticCheckInterval;
 
         TeleportWorld? farPortal = InstanceOf(farEnd);
+        if (farPortal != null && _farFoundAt < 0f)
+            _farFoundAt = Time.time;
         StaticStage ready = farPortal != null ? BuiltStage(farEnd, farPortal) : StaticStage.None;
         if (ready <= _captured)
         {
@@ -295,8 +301,15 @@ public sealed class PortalWindow : MonoBehaviour
         if (PerfStats.Enabled)
             OttoBifrostPlugin.Log.LogInfo(
                 $"Static picture of {farEnd.m_uid} ({(ready == StaticStage.Full ? "whole arrival area" : "near objects")}) " +
-                $"after {Time.time - _approachedAt:F2} s in range: server reports complete {DestinationSync.IsDestinationComplete(farEnd.m_uid)}, " +
+                $"after {Time.time - _approachedAt:F2} s in range: far portal after {SinceApproach(_farFoundAt)}, " +
+                $"near zones after {SinceApproach(_nearZonesAt)}, near objects after {SinceApproach(_nearBuiltAt)}, " +
+                $"server reports complete {DestinationSync.IsDestinationComplete(farEnd.m_uid)}, " +
                 $"{_settleCount} objects known around the arrival point");
+    }
+
+    private string SinceApproach(float at)
+    {
+        return at < 0f ? "not yet" : $"{at - _approachedAt:F2} s";
     }
 
     /// Both stages need the server to have nothing left to send, or the arrival object count to
@@ -316,14 +329,21 @@ public sealed class PortalWindow : MonoBehaviour
             _settleChangedAt = Time.time;
         }
 
+        // Checked before the settle test, so the perf log times the zones and objects on their own.
+        ZoneLoadPatches.NearState near = _captured < StaticStage.Near
+            ? ZoneLoadPatches.GetNearState(far.position, far.forward, StaticBehindAllowance)
+            : ZoneLoadPatches.NearState.Built;
+        if (near != ZoneLoadPatches.NearState.ZonesMissing && _nearZonesAt < 0f)
+            _nearZonesAt = Time.time;
+        if (near == ZoneLoadPatches.NearState.Built && _nearBuiltAt < 0f)
+            _nearBuiltAt = Time.time;
+
         bool settled = DestinationSync.IsDestinationComplete(farEnd.m_uid) || Time.time - _settleChangedAt >= StaticSettleTime;
         if (!settled)
             return StaticStage.None;
         if (ZNetScene.instance.IsAreaReady(arrival))
             return StaticStage.Full;
-        return _captured < StaticStage.Near && ZoneLoadPatches.AreNearObjectsBuilt(far.position, far.forward, StaticBehindAllowance)
-            ? StaticStage.Near
-            : StaticStage.None;
+        return _captured < StaticStage.Near && near == ZoneLoadPatches.NearState.Built ? StaticStage.Near : StaticStage.None;
     }
 
     private void ResetStaticCapture()
@@ -332,6 +352,9 @@ public sealed class PortalWindow : MonoBehaviour
         _settleCount = -1;
         _readySince = -1f;
         _approachedAt = -1f;
+        _farFoundAt = -1f;
+        _nearZonesAt = -1f;
+        _nearBuiltAt = -1f;
     }
 
     private void CaptureStatic(Camera main, TeleportWorld farPortal)

@@ -31,7 +31,9 @@ internal static class ZoneLoadPatches
     private static readonly List<ZDO> NearObjects = new();
     private static readonly HashSet<ZoneSystem.SectorIndex> NearSectors = new();
     private static readonly List<Vector2s> MissingZones = new();
-    private static readonly Dictionary<Vector2s, float> TerrainRequestedAt = new();
+    // The zone at the front of the need order, and when it got there, for the perf summary.
+    private static Vector2s _frontZone;
+    private static float _frontSince = -1f;
     private static Heightmap? _zoneHeightmap;
     private static float _nextPrimeCheck;
     private static float _nextPrimeTime;
@@ -141,21 +143,28 @@ internal static class ZoneLoadPatches
             }
         }
 
+        if (MissingZones.Count == 0)
+            _frontSince = -1f;
+        else if (_frontSince < 0f || !(MissingZones[0] == _frontZone))
+        {
+            _frontZone = MissingZones[0];
+            _frontSince = Time.time;
+        }
+
         // A true result means vanilla spawned one of its own zones this tick. Its next terrain
         // request comes on the next tick, and it must not queue behind builds for destinations.
         if (!__result && MissingZones.Count > 0)
         {
-            Vector2s missing = MissingZones[0];
-            NoteTerrainRequest(missing);
             // PokeLocalZone requests the terrain itself and spawns nothing until it is built.
-            if (__instance.PokeLocalZone(missing))
+            if (__instance.PokeLocalZone(MissingZones[0]))
             {
                 __result = true;
                 if (PerfStats.Enabled)
                 {
                     PerfStats.ZonesSpawned++;
-                    RecordTerrainWait(missing);
+                    PerfStats.AddZoneWait(Time.time - _frontSince);
                 }
+                _frontSince = -1f;
             }
 
             RequestTerrainAhead(__instance);
@@ -219,27 +228,8 @@ internal static class ZoneLoadPatches
                         _zoneHeightmap.IsDistantLod, WorldGenerator.instance))
                     continue;
                 room--;
-                NoteTerrainRequest(zone);
             }
         }
-    }
-
-    private static void NoteTerrainRequest(Vector2s zone)
-    {
-        if (!PerfStats.Enabled || TerrainRequestedAt.ContainsKey(zone))
-            return;
-        // Zones that stop being destinations never spawn, so the map is bounded here.
-        if (TerrainRequestedAt.Count >= 64)
-            TerrainRequestedAt.Clear();
-        TerrainRequestedAt[zone] = Time.time;
-    }
-
-    private static void RecordTerrainWait(Vector2s zone)
-    {
-        if (!TerrainRequestedAt.TryGetValue(zone, out float requestedAt))
-            return;
-        TerrainRequestedAt.Remove(zone);
-        PerfStats.AddZoneWait(Time.time - requestedAt);
     }
 
     /// Whether any part of the zone lies within PrimeRadius of point, on the ground plane.
@@ -392,10 +382,22 @@ internal static class ZoneLoadPatches
     /// big base this passes well before IsAreaReady, which waits for the whole 3x3 zones.
     internal static bool AreNearObjectsBuilt(Vector3 origin, Vector3 forward, float behindAllowance)
     {
+        return GetNearState(origin, forward, behindAllowance) == NearState.Built;
+    }
+
+    internal enum NearState
+    {
+        ZonesMissing,
+        ObjectsMissing,
+        Built
+    }
+
+    internal static NearState GetNearState(Vector3 origin, Vector3 forward, float behindAllowance)
+    {
         ZoneSystem zoneSystem = ZoneSystem.instance;
         ZNetScene scene = ZNetScene.instance;
         if (zoneSystem == null || scene == null || ZDOMan.instance == null)
-            return false;
+            return NearState.ZonesMissing;
 
         float radiusSqr = PrimeRadius * PrimeRadius;
         Vector2s centre = ZoneSystem.GetZone(origin);
@@ -411,7 +413,10 @@ internal static class ZoneLoadPatches
                     continue;
                 // An unloaded zone has no ground yet.
                 if (!zoneSystem.m_zones.ContainsKey(zone))
-                    return false;
+                {
+                    NearObjects.Clear();
+                    return NearState.ZonesMissing;
+                }
                 ZDOMan.instance.FindObjects(zone, NearObjects, NearSectors);
             }
         }
@@ -434,7 +439,7 @@ internal static class ZoneLoadPatches
         }
 
         NearObjects.Clear();
-        return built;
+        return built ? NearState.Built : NearState.ObjectsMissing;
     }
 
     private static readonly bool[] PortalPasses = { true, false };

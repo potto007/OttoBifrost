@@ -25,8 +25,10 @@ All notable changes to OttoBifrost.
   for one zone at a time, so every zone waited a full 0.1 s tick for its terrain. It
   now queues terrain for the next 4 zones ahead, and only while the game has none of
   its own zones to spawn.
-- With `LogPerformance` on, the timing summary shows how long destination zones waited
-  from terrain request to spawn, and the longest terrain build queue.
+- With `LogPerformance` on, the timing summary shows how long the next destination zone
+  waited to spawn, how busy the game's terrain thread was, and its longest queue. Each
+  `StaticView` picture also logs when the far portal, the zones within 40 m and the
+  objects within 40 m became ready.
 
 ## v1.2.0
 
