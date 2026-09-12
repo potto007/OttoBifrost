@@ -1,0 +1,147 @@
+using System.Diagnostics;
+using HarmonyLib;
+
+namespace OttoBifrost.Patches;
+
+/// Times are main-thread CPU time. Camera.Render only submits GPU work, so the preview GPU
+/// cost is not included. Frame times include everything the game does, not only this mod.
+[HarmonyPatch]
+internal static class PerfStats
+{
+    private const float ReportInterval = 5f;
+
+    // Refreshed once per frame from the plugin Update, so hot paths read a plain field.
+    internal static bool Enabled;
+
+    private static float _windowTime;
+    private static int _frames;
+    private static float _worstFrame;
+
+    internal static int PreviewRenders;
+    internal static long PreviewRenderTicks;
+    internal static long PreviewRenderMaxTicks;
+    internal static int ZonesSpawned;
+    internal static long ZonePatchTicks;
+    internal static long SectorPatchTicks;
+    internal static int ForcedCreates;
+    internal static long CreatePatchTicks;
+    internal static int NearestSwitches;
+    internal static int HeightmapForceCalls;
+    internal static int HeightmapsForced;
+    internal static long HeightmapForceTicks;
+    internal static long HeightmapForceMaxTicks;
+    internal static int ServerObjectsAppended;
+    internal static long ServerSyncTicks;
+
+    internal static long Begin()
+    {
+        return Enabled ? Stopwatch.GetTimestamp() : 0L;
+    }
+
+    internal static long Elapsed(long start)
+    {
+        return start == 0L ? 0L : Stopwatch.GetTimestamp() - start;
+    }
+
+    private static string Ms(long ticks)
+    {
+        return (ticks * 1000.0 / Stopwatch.Frequency).ToString("F1");
+    }
+
+    internal static void Tick(float unscaledDeltaTime, bool enabled)
+    {
+        if (enabled != Enabled)
+        {
+            Enabled = enabled;
+            Reset();
+        }
+
+        if (!enabled)
+            return;
+
+        _frames++;
+        _windowTime += unscaledDeltaTime;
+        if (unscaledDeltaTime > _worstFrame)
+            _worstFrame = unscaledDeltaTime;
+
+        if (_windowTime < ReportInterval)
+            return;
+
+        float avgFrameMs = _windowTime * 1000f / _frames;
+        string previewAvg = PreviewRenders > 0 ? Ms(PreviewRenderTicks / PreviewRenders) : "0.0";
+        OttoBifrostPlugin.Log.LogInfo(
+            $"Perf {_windowTime:F1}s: frames {_frames} avg {avgFrameMs:F1} ms worst {_worstFrame * 1000f:F1} ms" +
+            $" | destinations {Destinations.Active.Length}, nearest switches {NearestSwitches}" +
+            $" | preview renders {PreviewRenders} avg {previewAvg} ms max {Ms(PreviewRenderMaxTicks)} ms" +
+            $" | zones spawned {ZonesSpawned} (zone patch {Ms(ZonePatchTicks)} ms)" +
+            $" | sector patch {Ms(SectorPatchTicks)} ms" +
+            $" | forced creates {ForcedCreates} ({Ms(CreatePatchTicks)} ms)" +
+            $" | heightmap force {HeightmapForceCalls} calls, {HeightmapsForced} rebuilt, {Ms(HeightmapForceTicks)} ms total, max {Ms(HeightmapForceMaxTicks)} ms" +
+            $" | server appended {ServerObjectsAppended} objects ({Ms(ServerSyncTicks)} ms)" +
+            $" | client objects {ZDOMan.instance?.m_objectsByID.Count ?? 0}, received {ZDOMan.instance?.m_zdosRecvLastSec ?? 0}/s");
+        Reset();
+    }
+
+    internal static void AddPreviewRender(long start)
+    {
+        long elapsed = Elapsed(start);
+        if (elapsed == 0L)
+            return;
+        PreviewRenders++;
+        PreviewRenderTicks += elapsed;
+        if (elapsed > PreviewRenderMaxTicks)
+            PreviewRenderMaxTicks = elapsed;
+    }
+
+    private static void Reset()
+    {
+        _windowTime = 0f;
+        _frames = 0;
+        _worstFrame = 0f;
+        PreviewRenders = 0;
+        PreviewRenderTicks = 0L;
+        PreviewRenderMaxTicks = 0L;
+        ZonesSpawned = 0;
+        ZonePatchTicks = 0L;
+        SectorPatchTicks = 0L;
+        ForcedCreates = 0;
+        CreatePatchTicks = 0L;
+        NearestSwitches = 0;
+        HeightmapForceCalls = 0;
+        HeightmapsForced = 0;
+        HeightmapForceTicks = 0L;
+        HeightmapForceMaxTicks = 0L;
+        ServerObjectsAppended = 0;
+        ServerSyncTicks = 0L;
+    }
+
+    /// Ship, Vagon and SnapToGround call ForceGenerateAll from Awake, which rebuilds every
+    /// queued heightmap at once. Each preloaded cart or ship can cause a hitch.
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.ForceGenerateAll))]
+    private static void HeightmapForceGenerateAllPrefix(out long __state)
+    {
+        __state = Begin();
+        if (__state == 0L)
+            return;
+
+        HeightmapForceCalls++;
+        foreach (Heightmap heightmap in Heightmap.s_heightmaps)
+        {
+            if (heightmap.HaveQueuedRebuild())
+                HeightmapsForced++;
+        }
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(Heightmap), nameof(Heightmap.ForceGenerateAll))]
+    private static void HeightmapForceGenerateAllPostfix(long __state)
+    {
+        long elapsed = Elapsed(__state);
+        if (elapsed == 0L)
+            return;
+        HeightmapForceTicks += elapsed;
+        if (elapsed > HeightmapForceMaxTicks)
+            HeightmapForceMaxTicks = elapsed;
+    }
+}

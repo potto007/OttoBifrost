@@ -1,0 +1,96 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="environment.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>OttoBifrost</AssemblyName>
+    <RootNamespace>OttoBifrost</RootNamespace>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <Configurations>Debug;Release</Configurations>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="assembly_valheim" HintPath="$(CorlibPath)/assembly_valheim.dll" Private="false" Publicize="true" />
+    <Reference Include="assembly_utils" HintPath="$(CorlibPath)/assembly_utils.dll" Private="false" Publicize="true" />
+
+    <Reference Include="0Harmony" HintPath="$(BepInExPath)/core/0Harmony.dll" Private="false" />
+    <Reference Include="BepInEx" HintPath="$(BepInExPath)/core/BepInEx.dll" Private="false" />
+    <Reference Include="ServerSync" HintPath="Libs/ServerSync.dll" Private="true" />
+
+    <Reference Include="UnityEngine" HintPath="$(CorlibPath)/UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(CorlibPath)/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.PhysicsModule" HintPath="$(CorlibPath)/UnityEngine.PhysicsModule.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.43" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="environment.props" />
+    <None Include="ILRepack.targets" />
+    <None Include="README.md" />
+    <None Include="LICENSE.txt" />
+    <None Include="Thunderstore/manifest.json" />
+    <None Include="Thunderstore/icon.png" />
+    <None Include="Thunderstore/CHANGELOG.md" />
+  </ItemGroup>
+
+  <!-- Debug only. A Release build must produce exactly one output, the Thunderstore zip.
+       Copying a Release build into the mod manager's folder replaces the installed package
+       with different bytes under an unchanged version number, and nothing detects it.
+       Only into an existing plugin folder, so a build never creates a second install. -->
+  <Target Name="CopyOutputDLL" AfterTargets="ILRepacker" Condition="'$(Configuration)' == 'Debug' AND '$(CopyOutputDLLPath)' != '' AND Exists('$(CopyOutputDLLPath)')">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(CopyOutputDLLPath)" OverwriteReadOnlyFiles="true" />
+  </Target>
+
+  <!-- One file drives the package version. -->
+  <Target Name="ReadManifestVersion" AfterTargets="ILRepacker" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <ManifestJson>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/Thunderstore/manifest.json'))</ManifestJson>
+      <PluginSource>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/Plugin.cs'))</PluginSource>
+      <ModVersionFromSource>$([System.Text.RegularExpressions.Regex]::Match($(PluginSource), 'ModVersion\s*=\s*"([^"]+)"').Groups[1].Value)</ModVersionFromSource>
+      <PackageVersion>$([System.Text.RegularExpressions.Regex]::Match($(ManifestJson), '"version_number"\s*:\s*"([^"]+)"').Groups[1].Value)</PackageVersion>
+      <PackageStageDir>$(MSBuildProjectDirectory)/obj/thunderstore/potto007-$(AssemblyName)-$(PackageVersion)</PackageStageDir>
+      <PackageZip>$(MSBuildProjectDirectory)/Thunderstore/potto007-$(AssemblyName)-$(PackageVersion).zip</PackageZip>
+    </PropertyGroup>
+    <Error Condition="'$(PackageVersion)' == ''" Text="Could not read version_number from Thunderstore/manifest.json." />
+    <Error Condition="'$(PackageVersion)' != '$(ModVersionFromSource)' AND '$(ModVersionFromSource)' != ''" Text="Version drift: Thunderstore/manifest.json says $(PackageVersion), Plugin.cs ModVersion says $(ModVersionFromSource). Bump both." />
+  </Target>
+
+  <!-- DependsOnTargets, so a DLL locked by a running game fails the build instead of
+       packaging carrying on over the copy error. -->
+  <Target Name="MakeThunderstorePackage" AfterTargets="ReadManifestVersion" DependsOnTargets="CopyOutputDLL" Condition="'$(Configuration)' == 'Release'">
+    <RemoveDir Directories="$(PackageStageDir)" />
+    <MakeDir Directories="$(PackageStageDir)" />
+    <ItemGroup>
+      <PackageFiles Include="$(TargetPath)" />
+      <PackageFiles Include="$(MSBuildProjectDirectory)/Thunderstore/manifest.json" />
+      <PackageFiles Include="$(MSBuildProjectDirectory)/Thunderstore/icon.png" />
+      <PackageFiles Include="$(MSBuildProjectDirectory)/README.md" />
+      <PackageFiles Include="$(MSBuildProjectDirectory)/Thunderstore/CHANGELOG.md" />
+      <PackageFiles Include="$(MSBuildProjectDirectory)/LICENSE.txt" />
+    </ItemGroup>
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)/Thunderstore/icon.png')" Text="Thunderstore/icon.png is missing. It must be 256x256." />
+    <!-- A published version is frozen on Thunderstore, so its committed zip must not drift
+         from what shipped. Pass -p:AllowRepackPublished=true only to rebuild one on purpose. -->
+    <PropertyGroup>
+      <_TagRefFile>$(MSBuildProjectDirectory)/.git/refs/tags/v$(PackageVersion)</_TagRefFile>
+      <_PackedRefs Condition="Exists('$(MSBuildProjectDirectory)/.git/packed-refs')">$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/.git/packed-refs'))</_PackedRefs>
+      <_TagIsPacked Condition="'$(_PackedRefs)' != ''">$(_PackedRefs.Contains('refs/tags/v$(PackageVersion)'))</_TagIsPacked>
+    </PropertyGroup>
+    <Error Condition="'$(AllowRepackPublished)' != 'true' AND (Exists('$(_TagRefFile)') OR '$(_TagIsPacked)' == 'True')" Text="Version $(PackageVersion) is already tagged as v$(PackageVersion), so it is published and frozen. Bump the version in Plugin.cs and Thunderstore/manifest.json, or pass -p:AllowRepackPublished=true." />
+    <Copy SourceFiles="@(PackageFiles)" DestinationFolder="$(PackageStageDir)" />
+    <ZipDirectory SourceDirectory="$(PackageStageDir)" DestinationFile="$(PackageZip)" Overwrite="true" />
+    <Exec Command="python3 &quot;$(MSBuildProjectDirectory)/../OttoModTools/tools/verify_package.py&quot; &quot;$(PackageZip)&quot;" Condition="Exists('$(MSBuildProjectDirectory)/../OttoModTools/tools/verify_package.py')" />
+    <Message Importance="high" Text="Thunderstore package: $(PackageZip)" />
+  </Target>
+
+</Project>

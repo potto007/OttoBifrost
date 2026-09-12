@@ -1,0 +1,16 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OttoBifrost", "OttoBifrost.csproj", "{EDE07575-F656-4406-985E-38F1390B528E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EDE07575-F656-4406-985E-38F1390B528E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EDE07575-F656-4406-985E-38F1390B528E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EDE07575-F656-4406-985E-38F1390B528E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EDE07575-F656-4406-985E-38F1390B528E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

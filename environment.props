@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- Local machine paths. Edit this file, not the .csproj. -->
+<Project>
+    <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+        <ValheimGamePath>C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimGamePath>
+        <BepInExPath>C:\Users\paulo\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\Default\BepInEx</BepInExPath>
+        <CorlibPath>$(ValheimGamePath)\valheim_Data\Managed</CorlibPath>
+        <CopyOutputDLLPath>$(BepInExPath)\plugins\potto007-OttoBifrost</CopyOutputDLLPath>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+        <ValheimGamePath>/mnt/c/Program Files (x86)/Steam/steamapps/common/Valheim</ValheimGamePath>
+        <BepInExPath>/mnt/c/Users/paulo/AppData/Roaming/r2modmanPlus-local/Valheim/profiles/Default/BepInEx</BepInExPath>
+        <CorlibPath>$(ValheimGamePath)/valheim_Data/Managed</CorlibPath>
+        <CopyOutputDLLPath>$(BepInExPath)/plugins/potto007-OttoBifrost</CopyOutputDLLPath>
+    </PropertyGroup>
+</Project>

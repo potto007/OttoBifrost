@@ -1,0 +1,99 @@
+name: Publish Mod
+
+# Publishing runs on a version tag only. The Valheim assemblies are not
+# redistributable, so CI cannot compile the mod. Build the Release
+# configuration locally first: it writes Thunderstore/potto007-OttoBifrost-<version>.zip.
+# Commit that zip, then push the tag.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to publish'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Read the manifest and locate the package
+        id: manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mod_name=$(jq -re '.name' Thunderstore/manifest.json)
+          mod_version=$(jq -re '.version_number' Thunderstore/manifest.json)
+          mod_description=$(jq -re '.description' Thunderstore/manifest.json)
+
+          src_version=$(grep -oP 'ModVersion\s*=\s*"\K[^"]+' Plugin.cs)
+          if [ "${src_version}" != "${mod_version}" ]; then
+            echo "::error::Version drift: Plugin.cs says ${src_version}, manifest.json says ${mod_version}." >&2
+            exit 1
+          fi
+
+          # A stale zip must not ship under a new tag.
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          if [ "${tag#v}" != "${mod_version}" ]; then
+            echo "::error::Tag ${tag} does not match version ${mod_version}." >&2
+            exit 1
+          fi
+
+          zip_file="Thunderstore/potto007-${mod_name}-${mod_version}.zip"
+          if [ ! -f "${zip_file}" ]; then
+            echo "::error::${zip_file} is missing. Build Release locally and commit the zip." >&2
+            exit 1
+          fi
+
+          {
+            echo "tag=${tag}"
+            echo "mod_name=${mod_name}"
+            echo "mod_version=${mod_version}"
+            echo "mod_description=${mod_description}"
+            echo "zip_file=${zip_file}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Confirm the package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -l "${{ steps.manifest.outputs.zip_file }}"
+          for required in "${{ steps.manifest.outputs.mod_name }}.dll" manifest.json icon.png README.md CHANGELOG.md; do
+            unzip -l "${{ steps.manifest.outputs.zip_file }}" | grep -q " ${required}$" \
+              || { echo "::error::${required} is missing from the package." >&2; exit 1; }
+          done
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.manifest.outputs.tag }}
+          name: ${{ steps.manifest.outputs.mod_name }} ${{ steps.manifest.outputs.mod_version }}
+          files: ${{ steps.manifest.outputs.zip_file }}
+          generate_release_notes: true
+
+      - name: Publish the package to Thunderstore
+        uses: GreenTF/upload-thunderstore-package@v4.3
+        with:
+          namespace: ${{ vars.THUNDERSTORE_NAMESPACE || 'potto007' }}
+          name: ${{ steps.manifest.outputs.mod_name }}
+          description: ${{ steps.manifest.outputs.mod_description }}
+          version: ${{ steps.manifest.outputs.mod_version }}
+          token: ${{ secrets.THUNDERSTORE_TOKEN }}
+          community: valheim
+          repo: https://thunderstore.io/c/valheim/
+          file: ${{ steps.manifest.outputs.zip_file }}
+          categories: |
+            utility
+            tweaks
+            client-side
+            server-side
