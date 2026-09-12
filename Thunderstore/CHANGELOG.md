@@ -2,6 +2,15 @@
 
 All notable changes to OttoBifrost.
 
+## Unreleased
+
+- `StaticView` pictures shimmer and ripple, fade out at the rim, and are 30%
+  translucent.
+- `StaticView` no longer takes a picture while you are teleporting.
+- Fast teleports keep their own time. Server devcommands' "Debug mode fast teleport"
+  sets the teleport timer to 15 in debug mode, which handed a fast trip to vanilla
+  on its first frame, so you could land before the floors arrived.
+
 ## v1.1.0
 
 - New `PreviewMode` setting in the `Preview` section. Not synced.

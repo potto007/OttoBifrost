@@ -23,7 +23,9 @@ trip between two built bases becomes a walk instead of a loading screen.
     so the view shifts as you move.
   - `StaticView`. Once the objects around the arrival point are built, the mod takes
     one picture of the destination, facing the way you face when you arrive, and
-    shows it until you walk away. Each new approach takes a new picture.
+    shows it until you walk away. Each new approach takes a new picture. The picture
+    shimmers and ripples, fades out at its rim, and lets 30% of the portal behind it
+    show through.
 - **Loading before you arrive.** Within 15 m of a portal the zones around its
   destination start to load. Past 10 m that is 3x3 zones, inside 10 m it is 5x5,
   and inside 5 m it is 7x7. The area grows over a few seconds, and objects at the

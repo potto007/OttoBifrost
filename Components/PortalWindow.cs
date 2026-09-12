@@ -42,6 +42,21 @@ public sealed class PortalWindow : MonoBehaviour
     private const float StaticSettleTime = 1f;
     // Lets terrain edits rebuild their heightmaps before the picture is taken.
     private const float StaticCaptureDelay = 0.5f;
+    // A static picture shimmers and ripples like the surface of the portal, fades out at the rim,
+    // and lets the portal behind it show through.
+    private const int RippleRings = 12;
+    private const float StaticAlpha = 0.7f;
+    private const float RimFadeWidth = 0.08f;
+    private const float RippleAmplitude = 0.012f;
+    private const float RippleFrequency = 40f;
+    private const float RippleSpeed = 3f;
+    private const float WaveAmplitude = 0.006f;
+    private const float ShimmerFrequency = 9f;
+    private const float ShimmerSpeed = 2.2f;
+    // Vertex colours only darken, so the bright band sits on a dimmed base.
+    private const float ShimmerBase = 0.82f;
+    private static readonly Color ShimmerTint = new(0.92f, 0.97f, 1f);
+    private static readonly Vector2 UvCentre = new(0.5f, 0.5f);
 
     private static readonly List<PortalWindow> Windows = new();
     private static readonly Quaternion HalfTurn = Quaternion.Euler(0f, 180f, 0f);
@@ -50,6 +65,12 @@ public sealed class PortalWindow : MonoBehaviour
     // One static picture per frame, so walking into a hub room does not render every portal at once.
     private static int _captureFrame = -1;
     private static Mesh? _discMesh;
+    // Every static window shares one ripple mesh, animated once per frame.
+    private static Mesh? _rippleMesh;
+    private static Vector2[] _rippleBase = Array.Empty<Vector2>();
+    private static Vector2[] _rippleUv = Array.Empty<Vector2>();
+    private static Color[] _rippleColors = Array.Empty<Color>();
+    private static int _rippleFrame = -1;
     private static int _blockMask;
 
     private TeleportWorld _portal = null!;
@@ -61,6 +82,7 @@ public sealed class PortalWindow : MonoBehaviour
     private MeshRenderer? _frontDisc;
     private MeshRenderer? _backDisc;
     private bool _viewerInFront = true;
+    private bool _discsRipple;
     private bool _hasFrame;
     private float _nextRenderTime;
     private bool _staticView;
@@ -136,6 +158,12 @@ public sealed class PortalWindow : MonoBehaviour
         }
 
         EnsureDiscs();
+        if (_discsRipple != staticView)
+        {
+            _discsRipple = staticView;
+            SetDiscMesh(staticView ? RippleMesh() : DiscMesh());
+        }
+
         Transform model = ModelOf(_portal);
         bool frontSide = Vector3.Dot(model.forward, main.transform.position - model.position) >= 0f;
         // The stone portal model faces the other way from the wood portal model.
@@ -219,7 +247,12 @@ public sealed class PortalWindow : MonoBehaviour
         }
 
         SetDiscVisible(_hasFrame);
-        if (!_captureStale || farEnd == null || Time.time < _nextStaticCheck)
+        if (_hasFrame)
+            AnimateRipple();
+
+        // Mid-teleport, the far end of the arrival portal is the area the player is leaving,
+        // and it is being unloaded.
+        if (!_captureStale || farEnd == null || Time.time < _nextStaticCheck || Player.m_localPlayer.IsTeleporting())
             return;
         _nextStaticCheck = Time.time + StaticCheckInterval;
 
@@ -374,6 +407,14 @@ public sealed class PortalWindow : MonoBehaviour
         _backDisc.enabled = visible && !_viewerInFront;
     }
 
+    private void SetDiscMesh(Mesh mesh)
+    {
+        if (_frontDisc == null || _backDisc == null)
+            return;
+        _frontDisc.GetComponent<MeshFilter>().sharedMesh = mesh;
+        _backDisc.GetComponent<MeshFilter>().sharedMesh = mesh;
+    }
+
     // Created on first approach, so portals the player never walks up to cost nothing.
     private void EnsureDiscs()
     {
@@ -457,5 +498,95 @@ public sealed class PortalWindow : MonoBehaviour
         _discMesh = new Mesh { vertices = vertices, uv = uv, triangles = triangles };
         _discMesh.RecalculateBounds();
         return _discMesh;
+    }
+
+    /// The same disc as DiscMesh, split into rings, so the ripple has vertices to move.
+    private static Mesh RippleMesh()
+    {
+        if (_rippleMesh != null)
+            return _rippleMesh;
+
+        int count = 1 + RippleRings * DiscSegments;
+        Vector3[] vertices = new Vector3[count];
+        _rippleBase = new Vector2[count];
+        _rippleUv = new Vector2[count];
+        _rippleColors = new Color[count];
+        int[] triangles = new int[DiscSegments * 3 + (RippleRings - 1) * DiscSegments * 6];
+
+        for (int ring = 1; ring <= RippleRings; ring++)
+        {
+            float radius = 0.5f * ring / RippleRings;
+            for (int i = 0; i < DiscSegments; i++)
+            {
+                float angle = 2f * Mathf.PI * i / DiscSegments;
+                Vector2 point = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+                int index = RingVertex(ring, i);
+                vertices[index] = point;
+                _rippleBase[index] = point;
+            }
+        }
+
+        int t = 0;
+        for (int i = 0; i < DiscSegments; i++)
+        {
+            int next = (i + 1) % DiscSegments;
+            triangles[t++] = 0;
+            triangles[t++] = RingVertex(1, i);
+            triangles[t++] = RingVertex(1, next);
+            for (int ring = 1; ring < RippleRings; ring++)
+            {
+                triangles[t++] = RingVertex(ring, i);
+                triangles[t++] = RingVertex(ring + 1, i);
+                triangles[t++] = RingVertex(ring + 1, next);
+                triangles[t++] = RingVertex(ring, i);
+                triangles[t++] = RingVertex(ring + 1, next);
+                triangles[t++] = RingVertex(ring, next);
+            }
+        }
+
+        _rippleMesh = new Mesh { vertices = vertices, triangles = triangles };
+        _rippleMesh.MarkDynamic();
+        _rippleMesh.RecalculateBounds();
+        _rippleFrame = -1;
+        AnimateRipple();
+        return _rippleMesh;
+    }
+
+    private static int RingVertex(int ring, int segment)
+    {
+        return 1 + (ring - 1) * DiscSegments + segment;
+    }
+
+    private static void AnimateRipple()
+    {
+        if (_rippleMesh == null || _rippleFrame == Time.frameCount)
+            return;
+        _rippleFrame = Time.frameCount;
+
+        float time = Time.time;
+        float pulse = 0.04f * Mathf.Sin(time * 1.1f);
+        for (int i = 0; i < _rippleBase.Length; i++)
+        {
+            Vector2 point = _rippleBase[i];
+            float r = point.magnitude;
+            Vector2 direction = r > 0.0001f ? point / r : Vector2.zero;
+
+            // Rings travel out from the centre, strongest halfway to the rim, over a slow wave.
+            float ripple = Mathf.Sin(r * RippleFrequency - time * RippleSpeed) * RippleAmplitude * Mathf.Sin(r * 2f * Mathf.PI);
+            Vector2 wave = new(Mathf.Sin(point.y * 9f + time * 1.7f), Mathf.Sin(point.x * 7f - time * 1.3f));
+            _rippleUv[i] = point + UvCentre + direction * ripple + wave * WaveAmplitude;
+
+            // A narrow bright band sweeps diagonally across the picture.
+            float band = Mathf.Max(0f, Mathf.Sin((point.x + point.y) * ShimmerFrequency - time * ShimmerSpeed));
+            band *= band;
+            band *= band;
+            float brightness = Mathf.Clamp01(ShimmerBase + (1f - ShimmerBase) * band + pulse);
+            float rim = Mathf.SmoothStep(0f, 1f, (0.5f - r) / RimFadeWidth);
+            float alpha = Mathf.Clamp01(StaticAlpha + 0.1f * band) * rim;
+            _rippleColors[i] = new Color(ShimmerTint.r * brightness, ShimmerTint.g * brightness, ShimmerTint.b * brightness, alpha);
+        }
+
+        _rippleMesh.uv = _rippleUv;
+        _rippleMesh.colors = _rippleColors;
     }
 }
