@@ -26,8 +26,14 @@ internal static class ZoneLoadPatches
     private const int TerrainLookahead = 4;
     private const int TerrainQueueLimit = 8;
 
+    // Objects further than this behind a far portal are out of a StaticView picture, so they are
+    // created after the ones in front.
+    internal const float BehindAllowance = 2f;
+
     private static readonly List<ZDO> Candidates = new();
     private static readonly HashSet<ZoneSystem.SectorIndex> CandidateSectors = new();
+    private static readonly List<Candidate> Queue = new();
+    private static readonly Dictionary<Vector2s, ZDO.ObjectType> UnfinishedZones = new();
     private static readonly List<ZDO> NearObjects = new();
     private static readonly HashSet<ZoneSystem.SectorIndex> NearSectors = new();
     private static readonly List<Vector2s> MissingZones = new();
@@ -282,28 +288,14 @@ internal static class ZoneLoadPatches
 
         long start = PerfStats.Begin();
         int budget = CreatesPerPass;
-        CandidateSectors.Clear();
+        // Destinations are in load order, so the portal the player is nearest gets the budget first.
         foreach (Destination destination in destinations)
         {
-            for (int dy = -1; dy <= 1 && budget > 0; dy++)
-            {
-                for (int dx = -1; dx <= 1 && budget > 0; dx++)
-                {
-                    Vector2s zone = new(destination.Zone.x + dx, destination.Zone.y + dy);
-                    if (!zoneSystem.m_zones.ContainsKey(zone))
-                        continue;
-
-                    Candidates.Clear();
-                    ZDOMan.instance.FindObjects(zone, Candidates, CandidateSectors);
-                    CreateInTypeOrder(__instance, zoneSystem, zone, destination.Position, ref budget);
-                }
-            }
-
+            CreateNearDestination(__instance, zoneSystem, destination, ref budget);
             if (budget == 0)
                 break;
         }
 
-        Candidates.Clear();
         _primeWait = budget < CreatesPerPass ? PrimeInterval : Mathf.Min(_primeWait * 2f, MaxPrimeInterval);
         _nextPrimeTime = Time.time + _primeWait;
         if (PerfStats.Enabled)
@@ -313,45 +305,99 @@ internal static class ZoneLoadPatches
         }
     }
 
-    /// Follows the vanilla type order so no piece appears before the terrain edits and supports
-    /// under it. Portals go first within a type so a preview finds its far portal early.
-    private static void CreateInTypeOrder(ZNetScene scene, ZoneSystem zoneSystem, Vector2s zone, Vector3 center, ref int budget)
+    private readonly struct Candidate(ZDO zdo, bool portal, bool behind, float distanceSqr)
     {
-        float radiusSqr = PrimeRadius * PrimeRadius;
-        for (int type = (int)ZDO.ObjectType.Terrain; type >= (int)ZDO.ObjectType.Default; type--)
+        public readonly ZDO Zdo = zdo;
+        public readonly bool Portal = portal;
+        public readonly bool Behind = behind;
+        public readonly float DistanceSqr = distanceSqr;
+    }
+
+    /// Vanilla type order first, so no piece appears before the terrain edits and supports under
+    /// it. Within a type: portals, so a preview finds its far portal early, then objects in front
+    /// of the far portal, nearest first.
+    private static readonly Comparison<Candidate> ByPriority = (a, b) =>
+    {
+        int order = ((int)b.Zdo.Type).CompareTo((int)a.Zdo.Type);
+        if (order != 0)
+            return order;
+        if (a.Portal != b.Portal)
+            return a.Portal ? -1 : 1;
+        if (a.Behind != b.Behind)
+            return a.Behind ? 1 : -1;
+        return a.DistanceSqr.CompareTo(b.DistanceSqr);
+    };
+
+    /// Creates the missing objects within PrimeRadius of a destination, the same set
+    /// GetNearState waits for, in ByPriority order.
+    private static void CreateNearDestination(ZNetScene scene, ZoneSystem zoneSystem, Destination destination, ref int budget)
+    {
+        // A fast teleport checks around the arrival point, about 1.5 m from the far portal, so the
+        // pass reaches a little further than the check.
+        float radius = PrimeRadius + 2f;
+        float radiusSqr = radius * radius;
+        Candidates.Clear();
+        CandidateSectors.Clear();
+        for (int dy = -1; dy <= 1; dy++)
         {
-            ZDO.ObjectType objectType = (ZDO.ObjectType)type;
-            if (!zoneSystem.IsZoneReadyForType(zone, objectType))
-                return;
-
-            foreach (bool portalsOnly in PortalPasses)
+            for (int dx = -1; dx <= 1; dx++)
             {
-                foreach (ZDO zdo in Candidates)
-                {
-                    if (zdo.Type != objectType || !zdo.IsValid() || scene.m_instances.ContainsKey(zdo))
-                        continue;
-                    if (Portals.IsPortal(zdo) != portalsOnly)
-                        continue;
-                    // A terrain edit shapes its whole zone, so its distance does not matter.
-                    if (objectType != ZDO.ObjectType.Terrain && (zdo.GetPosition() - center).sqrMagnitude > radiusSqr)
-                        continue;
-
-                    // Lower types must wait while this type is unfinished.
-                    if (budget == 0)
-                        return;
-
-                    try
-                    {
-                        if (scene.CreateObject(zdo) != null)
-                            budget--;
-                    }
-                    catch (Exception ex)
-                    {
-                        OttoBifrostPlugin.Log.LogDebug($"Could not create {zdo.m_uid} near a destination: {ex.Message}");
-                    }
-                }
+                Vector2s zone = new(destination.Zone.x + dx, destination.Zone.y + dy);
+                if (zoneSystem.m_zones.ContainsKey(zone))
+                    ZDOMan.instance.FindObjects(zone, Candidates, CandidateSectors);
             }
         }
+
+        Queue.Clear();
+        foreach (ZDO zdo in Candidates)
+        {
+            if (!zdo.IsValid() || scene.m_instances.ContainsKey(zdo) || !scene.IsPrefabZDOValid(zdo))
+                continue;
+
+            Vector3 offset = zdo.GetPosition() - destination.Position;
+            float distanceSqr = offset.sqrMagnitude;
+            // A terrain edit shapes its whole zone, so its distance does not matter.
+            if (zdo.Type != ZDO.ObjectType.Terrain && distanceSqr > radiusSqr)
+                continue;
+
+            offset.y = 0f;
+            Queue.Add(new Candidate(zdo, Portals.IsPortal(zdo), Vector3.Dot(offset, destination.Forward) < -BehindAllowance, distanceSqr));
+        }
+
+        Candidates.Clear();
+        if (Queue.Count == 0)
+            return;
+
+        Queue.Sort(ByPriority);
+        UnfinishedZones.Clear();
+        foreach (Candidate candidate in Queue)
+        {
+            if (budget == 0)
+                break;
+
+            ZDO zdo = candidate.Zdo;
+            Vector2s zone = zdo.GetSector();
+            // Lower types in a zone wait while a higher type there is unfinished.
+            if (UnfinishedZones.TryGetValue(zone, out ZDO.ObjectType unfinished) && zdo.Type < unfinished)
+                continue;
+            if (!zoneSystem.IsZoneReadyForType(zone, zdo.Type))
+            {
+                UnfinishedZones[zone] = zdo.Type;
+                continue;
+            }
+
+            try
+            {
+                if (scene.CreateObject(zdo) != null)
+                    budget--;
+            }
+            catch (Exception ex)
+            {
+                OttoBifrostPlugin.Log.LogDebug($"Could not create {zdo.m_uid} near a destination: {ex.Message}");
+            }
+        }
+
+        Queue.Clear();
     }
 
     /// Changes when a destination's zones load or its known objects change, which is when a pass
@@ -382,7 +428,7 @@ internal static class ZoneLoadPatches
     /// big base this passes well before IsAreaReady, which waits for the whole 3x3 zones.
     internal static bool AreNearObjectsBuilt(Vector3 origin, Vector3 forward, float behindAllowance)
     {
-        return GetNearState(origin, forward, behindAllowance) == NearState.Built;
+        return GetNearState(origin, forward, behindAllowance, out _) == NearState.Built;
     }
 
     internal enum NearState
@@ -392,8 +438,10 @@ internal static class ZoneLoadPatches
         Built
     }
 
-    internal static NearState GetNearState(Vector3 origin, Vector3 forward, float behindAllowance)
+    /// blocker is the first missing object found, when the state is ObjectsMissing.
+    internal static NearState GetNearState(Vector3 origin, Vector3 forward, float behindAllowance, out ZDO? blocker)
     {
+        blocker = null;
         ZoneSystem zoneSystem = ZoneSystem.instance;
         ZNetScene scene = ZNetScene.instance;
         if (zoneSystem == null || scene == null || ZDOMan.instance == null)
@@ -421,26 +469,38 @@ internal static class ZoneLoadPatches
             }
         }
 
-        bool built = true;
         foreach (ZDO zdo in NearObjects)
         {
             if (!zdo.IsValid() || !scene.IsPrefabZDOValid(zdo) || scene.HaveInstance(zdo))
                 continue;
 
-            // A terrain edit shapes its whole zone, so its position does not matter.
+            // A terrain edit shapes its whole zone, so its position does not matter. The distance
+            // includes height, as in CreateNearDestination: a dungeon interior sits thousands of
+            // meters above its entrance, and the pass never creates it.
             Vector3 offset = zdo.GetPosition() - origin;
+            if (zdo.Type != ZDO.ObjectType.Terrain && offset.sqrMagnitude > radiusSqr)
+                continue;
             offset.y = 0f;
-            if (zdo.Type != ZDO.ObjectType.Terrain &&
-                (offset.sqrMagnitude > radiusSqr || Vector3.Dot(offset, forward) < -behindAllowance))
+            if (zdo.Type != ZDO.ObjectType.Terrain && Vector3.Dot(offset, forward) < -behindAllowance)
                 continue;
 
-            built = false;
+            blocker = zdo;
             break;
         }
 
         NearObjects.Clear();
-        return built ? NearState.Built : NearState.ObjectsMissing;
+        return blocker == null ? NearState.Built : NearState.ObjectsMissing;
     }
 
-    private static readonly bool[] PortalPasses = { true, false };
+    /// For the perf log: what an object is and where it sits relative to origin.
+    internal static string Describe(ZDO zdo, Vector3 origin)
+    {
+        GameObject? prefab = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(zdo.GetPrefab()) : null;
+        Vector3 offset = zdo.GetPosition() - origin;
+        float height = offset.y;
+        offset.y = 0f;
+        bool zoneReady = ZoneSystem.instance == null || ZoneSystem.instance.IsZoneReadyForType(zdo.GetSector(), zdo.Type);
+        return $"{(prefab != null ? prefab.name : zdo.GetPrefab().ToString())} ({zdo.Type}, {offset.magnitude:F0} m across, " +
+               $"{height:F0} m up{(zoneReady ? "" : ", its zone is still loading a location")})";
+    }
 }

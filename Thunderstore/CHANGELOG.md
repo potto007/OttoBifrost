@@ -29,6 +29,15 @@ All notable changes to OttoBifrost.
   waited to spawn, how busy the game's terrain thread was, and its longest queue. Each
   `StaticView` picture also logs when the far portal, the zones within 40 m and the
   objects within 40 m became ready.
+- `StaticView` pictures and fast teleports near caves, crypts and steep hills no longer
+  wait several seconds. They waited for every object within 40 m across the ground,
+  including dungeon interiors far above and trees far up a slope, while the mod only
+  created objects within 40 m in a straight line and left the rest to the game, which
+  creates distant objects last. Both now use the straight-line distance.
+- Objects near a destination are created in priority order: terrain edits and supports
+  first, then portals, then objects in front of the far portal before those behind it,
+  nearest first. Before, the order within each zone was the order the game stores them in.
+- With `LogPerformance` on, each `StaticView` picture names the last object it waited for.
 
 ## v1.2.0
 

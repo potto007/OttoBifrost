@@ -58,7 +58,9 @@ public sealed class DestinationLoader : MonoBehaviour
         }
 
         int grown = 1 + (int)((Time.time - _requestedAt) / SecondsPerRing);
-        Destinations.Request(_portalId, farEnd.GetPosition(), Mathf.Min(RadiusFor(distance), grown), distance);
+        // Vanilla lands the player on this side of the far portal.
+        Destinations.Request(_portalId, farEnd.GetPosition(), farEnd.GetRotation() * Vector3.forward,
+            Mathf.Min(RadiusFor(distance), grown), distance);
     }
 
     private void OnDisable()

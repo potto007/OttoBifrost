@@ -5,9 +5,11 @@ using UnityEngine;
 
 namespace OttoBifrost;
 
-internal readonly struct Destination(Vector3 position, int radius)
+internal readonly struct Destination(Vector3 position, Vector3 forward, int radius)
 {
     public readonly Vector3 Position = position;
+    // The side of the far portal the player arrives on. Zero for the landing spot, which has no front.
+    public readonly Vector3 Forward = forward;
     public readonly Vector2s Zone = ZoneSystem.GetZone(position);
     public readonly int Radius = radius;
 }
@@ -18,6 +20,7 @@ internal static class Destinations
     private sealed class PortalRequest
     {
         public Vector3 Position;
+        public Vector3 Forward;
         public int Radius;
         public float Distance;
     }
@@ -46,7 +49,7 @@ internal static class Destinations
     internal static bool Any => Active.Length != 0;
 
     /// distance is from the player to the portal, and the nearest portal loads first.
-    internal static void Request(ZDOID portal, Vector3 farEnd, int radius, float distance)
+    internal static void Request(ZDOID portal, Vector3 farEnd, Vector3 farForward, int radius, float distance)
     {
         if (!Requests.TryGetValue(portal, out PortalRequest request))
         {
@@ -56,6 +59,7 @@ internal static class Destinations
 
         DeferredReleases.Remove(portal);
         request.Position = farEnd;
+        request.Forward = farForward;
         request.Radius = radius;
         request.Distance = distance;
         Rebuild();
@@ -152,7 +156,7 @@ internal static class Destinations
         foreach (KeyValuePair<ZDOID, PortalRequest> entry in Requests)
         {
             if (entry.Key == nearest)
-                Pending.Add(new Destination(entry.Value.Position, entry.Value.Radius));
+                Pending.Add(new Destination(entry.Value.Position, entry.Value.Forward, entry.Value.Radius));
             else
                 Others.Add(entry.Value);
         }
@@ -162,11 +166,11 @@ internal static class Destinations
         // to a portal it keeps only the zones a preview would, and its outer objects do not queue
         // ahead of the destination's.
         if (_holdingArrival)
-            Pending.Add(new Destination(_arrival, nearest != ZDOID.None ? SecondaryRadius : ArrivalRadius));
+            Pending.Add(new Destination(_arrival, Vector3.zero, nearest != ZDOID.None ? SecondaryRadius : ArrivalRadius));
 
         Others.Sort(ByDistance);
         foreach (PortalRequest other in Others)
-            Pending.Add(new Destination(other.Position, Mathf.Min(other.Radius, SecondaryRadius)));
+            Pending.Add(new Destination(other.Position, other.Forward, Mathf.Min(other.Radius, SecondaryRadius)));
 
         if (!MatchesActive(Pending))
             Active = Pending.ToArray();

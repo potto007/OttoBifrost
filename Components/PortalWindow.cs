@@ -43,9 +43,6 @@ public sealed class PortalWindow : MonoBehaviour
     private const float StaticSettleTime = 1f;
     // Lets terrain edits rebuild their heightmaps before the picture is taken.
     private const float StaticCaptureDelay = 0.2f;
-    // The first picture waits only for objects within the radius the destination pass creates
-    // first. Objects further than this behind the far portal are out of shot.
-    private const float StaticBehindAllowance = 2f;
     // A static picture shimmers and ripples like the surface of the portal, fades out at the rim,
     // and lets the portal behind it show through.
     private const int RippleRings = 12;
@@ -101,6 +98,7 @@ public sealed class PortalWindow : MonoBehaviour
     private float _farFoundAt = -1f;
     private float _nearZonesAt = -1f;
     private float _nearBuiltAt = -1f;
+    private string? _lastBlocker;
 
     private enum StaticStage
     {
@@ -302,7 +300,8 @@ public sealed class PortalWindow : MonoBehaviour
             OttoBifrostPlugin.Log.LogInfo(
                 $"Static picture of {farEnd.m_uid} ({(ready == StaticStage.Full ? "whole arrival area" : "near objects")}) " +
                 $"after {Time.time - _approachedAt:F2} s in range: far portal after {SinceApproach(_farFoundAt)}, " +
-                $"near zones after {SinceApproach(_nearZonesAt)}, near objects after {SinceApproach(_nearBuiltAt)}, " +
+                $"near zones after {SinceApproach(_nearZonesAt)}, near objects after {SinceApproach(_nearBuiltAt)} " +
+                $"(last waited for {_lastBlocker ?? "nothing"}), " +
                 $"server reports complete {DestinationSync.IsDestinationComplete(farEnd.m_uid)}, " +
                 $"{_settleCount} objects known around the arrival point");
     }
@@ -330,9 +329,14 @@ public sealed class PortalWindow : MonoBehaviour
         }
 
         // Checked before the settle test, so the perf log times the zones and objects on their own.
-        ZoneLoadPatches.NearState near = _captured < StaticStage.Near
-            ? ZoneLoadPatches.GetNearState(far.position, far.forward, StaticBehindAllowance)
-            : ZoneLoadPatches.NearState.Built;
+        // The first picture waits only for the objects near the far portal and in front of it.
+        ZoneLoadPatches.NearState near = ZoneLoadPatches.NearState.Built;
+        if (_captured < StaticStage.Near)
+        {
+            near = ZoneLoadPatches.GetNearState(far.position, far.forward, ZoneLoadPatches.BehindAllowance, out ZDO? blocker);
+            if (blocker != null && PerfStats.Enabled)
+                _lastBlocker = ZoneLoadPatches.Describe(blocker, far.position);
+        }
         if (near != ZoneLoadPatches.NearState.ZonesMissing && _nearZonesAt < 0f)
             _nearZonesAt = Time.time;
         if (near == ZoneLoadPatches.NearState.Built && _nearBuiltAt < 0f)
@@ -355,6 +359,7 @@ public sealed class PortalWindow : MonoBehaviour
         _farFoundAt = -1f;
         _nearZonesAt = -1f;
         _nearBuiltAt = -1f;
+        _lastBlocker = null;
     }
 
     private void CaptureStatic(Camera main, TeleportWorld farPortal)
