@@ -4,40 +4,34 @@ All notable changes to OttoBifrost.
 
 ## Unreleased
 
-- `StaticView` shows a picture sooner at a big base. The first picture waits only
-  for the objects within 40 m in front of the far portal, not every object in the
-  3x3 zones around it. A second picture replaces it once the whole arrival area has
-  loaded. The delay before each picture dropped from 0.5 s to 0.2 s.
-- With `LogPerformance` on, each `StaticView` picture logs how long after you came in
-  range it was taken, and whether it covers the near objects or the whole area.
-- Fast teleports end once the objects within 40 m of the arrival point exist, not
-  every object in the 3x3 zones around it. Taking a portal a few seconds after
-  landing used to wait 1-3 s behind the loading screen while the far edges of the
-  base built.
-- For 5 s after you land, the portal nearest you keeps loading first and at full
-  size. Before, every portal waited behind the area you landed in, so a portal you
-  took right away was not preloaded yet.
-- Destination zones load in need order. Every destination gets its centre zone, then
-  every zone within 40 m of its far portal, before any destination gets its outer
-  zones. In a hub with many portals, the first pictures used to come out one by one
-  over about 16 s while the outer zones of earlier portals loaded first.
-- Destination zones load up to twice as fast. The mod asked the game's terrain thread
-  for one zone at a time, so every zone waited a full 0.1 s tick for its terrain. It
-  now queues terrain for the next 4 zones ahead, and only while the game has none of
-  its own zones to spawn.
-- With `LogPerformance` on, the timing summary shows how long the next destination zone
-  waited to spawn, how busy the game's terrain thread was, and its longest queue. Each
-  `StaticView` picture also logs when the far portal, the zones within 40 m and the
-  objects within 40 m became ready.
-- `StaticView` pictures and fast teleports near caves, crypts and steep hills no longer
-  wait several seconds. They waited for every object within 40 m across the ground,
-  including dungeon interiors far above and trees far up a slope, while the mod only
-  created objects within 40 m in a straight line and left the rest to the game, which
-  creates distant objects last. Both now use the straight-line distance.
-- Objects near a destination are created in priority order: terrain edits and supports
-  first, then portals, then objects in front of the far portal before those behind it,
-  nearest first. Before, the order within each zone was the order the game stores them in.
-- With `LogPerformance` on, each `StaticView` picture names the last object it waited for.
+- `StaticView` shows its first picture sooner. It waits only for the objects within
+  40 m of the far portal, on the side you arrive on, instead of every object in the
+  3x3 zones around it. Height counts toward the 40 m, so the interior of a crypt
+  next to the portal, which the game places far above its entrance, doesn't hold
+  the picture back. A second picture replaces the first once the whole arrival area
+  has loaded. Each picture waits 0.2 s, down from 0.5 s.
+- Fast teleports end once the objects within 40 m of the arrival point exist. They
+  used to wait for the whole 3x3 zones, so a portal taken a few seconds after
+  landing could hold you behind the loading screen for 1-3 s.
+- For 5 s after you land, the portal nearest you still loads first and at full
+  size. Before, every portal waited behind the area you landed in.
+- Destination zones load in the order pictures and teleports need them. Each
+  destination gets its centre zone first, then the zones within 40 m of its far
+  portal, and only then its outer zones. In a hub with 8 portals, first pictures
+  used to trickle in over about 16 s.
+- Destination zones load up to twice as fast. The mod asked the game's terrain
+  thread for one zone at a time, so every zone sat out an extra 0.1 s tick. It now
+  queues terrain for the next 4 zones, but only while the game has no zones of its
+  own to load.
+- Objects near a destination come up in a fixed order. The game's own rule still
+  holds: terrain edits, then building pieces, then everything else. Within each of
+  those, portals go first, then objects in front of the far portal, closest first.
+  Before, each zone's objects came in whatever order the game stored them.
+- `LogPerformance` reports more. Each 5 s summary adds how long the next destination
+  zone waited to spawn and how busy the terrain thread was. Each `StaticView`
+  picture logs how long after you came in range it was taken, when the far portal,
+  the nearby zones and the nearby objects were ready, and the last object it waited
+  for.
 
 ## v1.2.0
 
