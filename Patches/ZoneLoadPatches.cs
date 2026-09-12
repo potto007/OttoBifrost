@@ -19,11 +19,20 @@ internal static class ZoneLoadPatches
     private const int CreatesPerPass = 20;
     // Under one zone wide, so the 3x3 zones around a destination hold every object in range.
     internal const float PrimeRadius = 40f;
+    // The next few missing zones have their terrain built ahead on vanilla's heightmap thread, so
+    // each spawns on its first poke instead of on the tick after its build. HeightmapBuilder keeps
+    // only 16 finished builds and drops the oldest, which can be vanilla's own, so the queue stays
+    // well under that.
+    private const int TerrainLookahead = 4;
+    private const int TerrainQueueLimit = 8;
 
     private static readonly List<ZDO> Candidates = new();
     private static readonly HashSet<ZoneSystem.SectorIndex> CandidateSectors = new();
     private static readonly List<ZDO> NearObjects = new();
     private static readonly HashSet<ZoneSystem.SectorIndex> NearSectors = new();
+    private static readonly List<Vector2s> MissingZones = new();
+    private static readonly Dictionary<Vector2s, float> TerrainRequestedAt = new();
+    private static Heightmap? _zoneHeightmap;
     private static float _nextPrimeCheck;
     private static float _nextPrimeTime;
     private static float _primeWait = PrimeInterval;
@@ -88,6 +97,9 @@ internal static class ZoneLoadPatches
     /// Missing zones are taken in need order across all destinations: every centre zone, then
     /// every zone within PrimeRadius of a destination, which is what its first StaticView picture
     /// and a fast teleport wait for, then the remaining zones ring by ring.
+    ///
+    /// Vanilla calls this every 0.1 s. One destination zone spawns per call, and only when vanilla
+    /// has nothing of its own to spawn.
     [HarmonyPostfix]
     [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.CreateLocalZones))]
     private static void ZoneSystemCreateLocalZonesPostfix(ZoneSystem __instance, ref bool __result)
@@ -101,7 +113,8 @@ internal static class ZoneLoadPatches
         foreach (Destination destination in destinations)
             outerRing = Mathf.Max(outerRing, destination.Radius);
 
-        bool haveMissing = FindMissingNearZone(__instance, destinations, out Vector2s missing);
+        MissingZones.Clear();
+        AddMissingNearZones(__instance, destinations);
         for (int ring = 0; ring <= outerRing; ring++)
         {
             foreach (Destination destination in destinations)
@@ -121,37 +134,42 @@ internal static class ZoneLoadPatches
                         // tick, including ticks where vanilla is busy with the player's zones.
                         if (__instance.m_zones.TryGetValue(zone, out ZoneSystem.ZoneData data))
                             data.m_ttl = 0f;
-                        else if (!haveMissing)
-                        {
-                            haveMissing = true;
-                            missing = zone;
-                        }
+                        else
+                            AddMissing(zone);
                     }
                 }
             }
         }
 
-        // A false result from PokeLocalZone means the heightmap is still building. Poking more
-        // zones would only queue more builds.
-        if (!__result && haveMissing && __instance.PokeLocalZone(missing))
+        // A true result means vanilla spawned one of its own zones this tick. Its next terrain
+        // request comes on the next tick, and it must not queue behind builds for destinations.
+        if (!__result && MissingZones.Count > 0)
         {
-            __result = true;
-            if (PerfStats.Enabled)
-                PerfStats.ZonesSpawned++;
+            Vector2s missing = MissingZones[0];
+            NoteTerrainRequest(missing);
+            // PokeLocalZone requests the terrain itself and spawns nothing until it is built.
+            if (__instance.PokeLocalZone(missing))
+            {
+                __result = true;
+                if (PerfStats.Enabled)
+                {
+                    PerfStats.ZonesSpawned++;
+                    RecordTerrainWait(missing);
+                }
+            }
+
+            RequestTerrainAhead(__instance);
         }
 
         PerfStats.ZonePatchTicks += PerfStats.Elapsed(start);
     }
 
-    private static bool FindMissingNearZone(ZoneSystem zoneSystem, Destination[] destinations, out Vector2s missing)
+    private static void AddMissingNearZones(ZoneSystem zoneSystem, Destination[] destinations)
     {
         foreach (Destination destination in destinations)
         {
             if (!zoneSystem.m_zones.ContainsKey(destination.Zone))
-            {
-                missing = destination.Zone;
-                return true;
-            }
+                AddMissing(destination.Zone);
         }
 
         foreach (Destination destination in destinations)
@@ -162,16 +180,66 @@ internal static class ZoneLoadPatches
                 {
                     Vector2s zone = new(destination.Zone.x + dx, destination.Zone.y + dy);
                     if (!zoneSystem.m_zones.ContainsKey(zone) && WithinPrimeRadius(zoneSystem, zone, destination.Position))
-                    {
-                        missing = zone;
-                        return true;
-                    }
+                        AddMissing(zone);
                 }
             }
         }
+    }
 
-        missing = default;
-        return false;
+    private static void AddMissing(Vector2s zone)
+    {
+        if (MissingZones.Count <= TerrainLookahead && !MissingZones.Contains(zone))
+            MissingZones.Add(zone);
+    }
+
+    /// Requests terrain for the zones after the first in MissingZones, which PokeLocalZone has
+    /// already requested.
+    private static void RequestTerrainAhead(ZoneSystem zoneSystem)
+    {
+        HeightmapBuilder builder = HeightmapBuilder.instance;
+        if (builder == null || WorldGenerator.instance == null || MissingZones.Count < 2)
+            return;
+        if (_zoneHeightmap == null)
+            _zoneHeightmap = zoneSystem.m_zonePrefab.GetComponentInChildren<Heightmap>();
+        if (_zoneHeightmap == null)
+            return;
+
+        // The lock is re-entrant, and holding it keeps the count right while builds are added.
+        lock (builder.m_lock)
+        {
+            if (PerfStats.Enabled && builder.m_toBuild.Count > PerfStats.TerrainQueueMax)
+                PerfStats.TerrainQueueMax = builder.m_toBuild.Count;
+
+            int room = TerrainQueueLimit - builder.m_toBuild.Count - builder.m_ready.Count;
+            for (int i = 1; i < MissingZones.Count && room > 0; i++)
+            {
+                Vector2s zone = MissingZones[i];
+                // Queues a build only when the zone has none queued or finished.
+                if (builder.IsTerrainReady(ZoneSystem.GetZonePos(zone), _zoneHeightmap.m_width, _zoneHeightmap.m_scale,
+                        _zoneHeightmap.IsDistantLod, WorldGenerator.instance))
+                    continue;
+                room--;
+                NoteTerrainRequest(zone);
+            }
+        }
+    }
+
+    private static void NoteTerrainRequest(Vector2s zone)
+    {
+        if (!PerfStats.Enabled || TerrainRequestedAt.ContainsKey(zone))
+            return;
+        // Zones that stop being destinations never spawn, so the map is bounded here.
+        if (TerrainRequestedAt.Count >= 64)
+            TerrainRequestedAt.Clear();
+        TerrainRequestedAt[zone] = Time.time;
+    }
+
+    private static void RecordTerrainWait(Vector2s zone)
+    {
+        if (!TerrainRequestedAt.TryGetValue(zone, out float requestedAt))
+            return;
+        TerrainRequestedAt.Remove(zone);
+        PerfStats.AddZoneWait(Time.time - requestedAt);
     }
 
     /// Whether any part of the zone lies within PrimeRadius of point, on the ground plane.

@@ -21,6 +21,10 @@ internal static class PerfStats
     internal static long PreviewRenderTicks;
     internal static long PreviewRenderMaxTicks;
     internal static int ZonesSpawned;
+    internal static int ZoneWaits;
+    internal static float ZoneWaitTotal;
+    internal static float ZoneWaitMax;
+    internal static int TerrainQueueMax;
     internal static long ZonePatchTicks;
     internal static long SectorPatchTicks;
     internal static int ForcedCreates;
@@ -69,11 +73,13 @@ internal static class PerfStats
 
         float avgFrameMs = _windowTime * 1000f / _frames;
         string previewAvg = PreviewRenders > 0 ? Ms(PreviewRenderTicks / PreviewRenders) : "0.0";
+        float zoneWaitAvg = ZoneWaits > 0 ? ZoneWaitTotal / ZoneWaits : 0f;
         OttoBifrostPlugin.Log.LogInfo(
             $"Perf {_windowTime:F1}s: frames {_frames} avg {avgFrameMs:F1} ms worst {_worstFrame * 1000f:F1} ms" +
             $" | destinations {Destinations.Active.Length}, nearest switches {NearestSwitches}" +
             $" | preview renders {PreviewRenders} avg {previewAvg} ms max {Ms(PreviewRenderMaxTicks)} ms" +
             $" | zones spawned {ZonesSpawned} (zone patch {Ms(ZonePatchTicks)} ms)" +
+            $", terrain request to spawn avg {zoneWaitAvg:F2} s max {ZoneWaitMax:F2} s over {ZoneWaits}, terrain queue max {TerrainQueueMax}" +
             $" | sector patch {Ms(SectorPatchTicks)} ms" +
             $" | forced creates {ForcedCreates} ({Ms(CreatePatchTicks)} ms)" +
             $" | heightmap force {HeightmapForceCalls} calls, {HeightmapsForced} rebuilt, {Ms(HeightmapForceTicks)} ms total, max {Ms(HeightmapForceMaxTicks)} ms" +
@@ -93,6 +99,15 @@ internal static class PerfStats
             PreviewRenderMaxTicks = elapsed;
     }
 
+    /// seconds runs from the first terrain request for a destination zone to its spawn.
+    internal static void AddZoneWait(float seconds)
+    {
+        ZoneWaits++;
+        ZoneWaitTotal += seconds;
+        if (seconds > ZoneWaitMax)
+            ZoneWaitMax = seconds;
+    }
+
     private static void Reset()
     {
         _windowTime = 0f;
@@ -102,6 +117,10 @@ internal static class PerfStats
         PreviewRenderTicks = 0L;
         PreviewRenderMaxTicks = 0L;
         ZonesSpawned = 0;
+        ZoneWaits = 0;
+        ZoneWaitTotal = 0f;
+        ZoneWaitMax = 0f;
+        TerrainQueueMax = 0;
         ZonePatchTicks = 0L;
         SectorPatchTicks = 0L;
         ForcedCreates = 0;

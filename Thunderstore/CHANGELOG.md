@@ -21,6 +21,12 @@ All notable changes to OttoBifrost.
   every zone within 40 m of its far portal, before any destination gets its outer
   zones. In a hub with many portals, the first pictures used to come out one by one
   over about 16 s while the outer zones of earlier portals loaded first.
+- Destination zones load up to twice as fast. The mod asked the game's terrain thread
+  for one zone at a time, so every zone waited a full 0.1 s tick for its terrain. It
+  now queues terrain for the next 4 zones ahead, and only while the game has none of
+  its own zones to spawn.
+- With `LogPerformance` on, the timing summary shows how long destination zones waited
+  from terrain request to spawn, and the longest terrain build queue.
 
 ## v1.2.0
 
