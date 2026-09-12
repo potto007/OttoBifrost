@@ -81,7 +81,7 @@ internal static class Destinations
         _teleporting = true;
     }
 
-    /// The landing spot stays loaded for holdSeconds and loads before every portal destination.
+    /// The landing spot stays loaded for holdSeconds, after the nearest portal's destination.
     internal static void EndTeleport(Vector3 landing, float holdSeconds)
     {
         _teleporting = false;
@@ -149,17 +149,20 @@ internal static class Destinations
 
         Pending.Clear();
         Others.Clear();
-        // The player lands on the arrival point, so while it is held every portal waits behind it.
-        if (_holdingArrival)
-            Pending.Add(new Destination(_arrival, ArrivalRadius));
-
         foreach (KeyValuePair<ZDOID, PortalRequest> entry in Requests)
         {
-            if (entry.Key == nearest && !_holdingArrival)
+            if (entry.Key == nearest)
                 Pending.Add(new Destination(entry.Value.Position, entry.Value.Radius));
             else
                 Others.Add(entry.Value);
         }
+
+        // The nearest portal goes first even just after landing, so a portal taken a few seconds
+        // later is ready. The player's own active area already covers the landing spot, so next
+        // to a portal it keeps only the zones a preview would, and its outer objects do not queue
+        // ahead of the destination's.
+        if (_holdingArrival)
+            Pending.Add(new Destination(_arrival, nearest != ZDOID.None ? SecondaryRadius : ArrivalRadius));
 
         Others.Sort(ByDistance);
         foreach (PortalRequest other in Others)

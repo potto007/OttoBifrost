@@ -14,6 +14,9 @@ All notable changes to OttoBifrost.
   every object in the 3x3 zones around it. Taking a portal a few seconds after
   landing used to wait 1-3 s behind the loading screen while the far edges of the
   base built.
+- For 5 s after you land, the portal nearest you keeps loading first and at full
+  size. Before, every portal waited behind the area you landed in, so a portal you
+  took right away was not preloaded yet.
 
 ## v1.2.0
 
