@@ -13,6 +13,10 @@ on:
       tag:
         description: 'Existing tag to publish'
         required: true
+      skip_hexium:
+        description: 'Skip Hexium, which rejects a version it already has'
+        type: boolean
+        default: false
 
 jobs:
   publish:
@@ -83,6 +87,7 @@ jobs:
 
       # Runs before the Thunderstore action, which removes the zip from the workspace.
       - name: Publish the package to Hexium
+        if: ${{ github.event.inputs.skip_hexium != 'true' }}
         env:
           HEXIUM_TOKEN: ${{ secrets.HEXIUM_TOKEN }}
           HEXIUM_TEAM: ${{ vars.HEXIUM_TEAM }}
