@@ -2,7 +2,7 @@
 
 All notable changes to OttoBifrost.
 
-## Unreleased
+## v1.3.0
 
 - `StaticView` shows its first picture sooner. It waits only for the objects within
   40 m of the far portal, on the side you arrive on, instead of every object in the
