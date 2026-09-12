@@ -13,13 +13,20 @@ internal static class ZoneLoadPatches
     // Objects near a destination are created ahead of the vanilla distance sort, in small
     // batches, so the preview has something to show without a hitch.
     private const float PrimeInterval = 0.2f;
+    // A pass that creates nothing doubles the wait up to this, so built destinations cost little.
+    // New zones, objects or destinations bring the wait back to PrimeInterval.
+    private const float MaxPrimeInterval = 2f;
     private const int CreatesPerPass = 20;
     // Under one zone wide, so the 3x3 zones around a destination hold every object in range.
     private const float PrimeRadius = 40f;
 
     private static readonly List<ZDO> Candidates = new();
     private static readonly HashSet<ZoneSystem.SectorIndex> CandidateSectors = new();
+    private static float _nextPrimeCheck;
     private static float _nextPrimeTime;
+    private static float _primeWait = PrimeInterval;
+    private static Destination[]? _primedDestinations;
+    private static int _primedWorkKey;
     private static bool _inAreaReadyCheck;
 
     private static bool IsZoneLoaded(Vector2s zone)
@@ -156,10 +163,22 @@ internal static class ZoneLoadPatches
     {
         Destination[] destinations = Destinations.Active;
         ZoneSystem zoneSystem = ZoneSystem.instance;
-        if (destinations.Length == 0 || ZDOMan.instance == null || zoneSystem == null || Time.time < _nextPrimeTime)
+        if (destinations.Length == 0 || ZDOMan.instance == null || zoneSystem == null || Time.time < _nextPrimeCheck)
             return;
+        _nextPrimeCheck = Time.time + PrimeInterval;
 
-        _nextPrimeTime = Time.time + PrimeInterval;
+        int workKey = WorkKey(destinations, zoneSystem);
+        if (destinations != _primedDestinations || workKey != _primedWorkKey)
+        {
+            _primedDestinations = destinations;
+            _primedWorkKey = workKey;
+            _primeWait = PrimeInterval;
+        }
+        else if (Time.time < _nextPrimeTime)
+        {
+            return;
+        }
+
         long start = PerfStats.Begin();
         int budget = CreatesPerPass;
         CandidateSectors.Clear();
@@ -184,6 +203,8 @@ internal static class ZoneLoadPatches
         }
 
         Candidates.Clear();
+        _primeWait = budget < CreatesPerPass ? PrimeInterval : Mathf.Min(_primeWait * 2f, MaxPrimeInterval);
+        _nextPrimeTime = Time.time + _primeWait;
         if (PerfStats.Enabled)
         {
             PerfStats.ForcedCreates += CreatesPerPass - budget;
@@ -230,6 +251,28 @@ internal static class ZoneLoadPatches
                 }
             }
         }
+    }
+
+    /// Changes when a destination's zones load or its known objects change, which is when a pass
+    /// can find something new to create. Costs a few dictionary lookups per destination.
+    private static int WorkKey(Destination[] destinations, ZoneSystem zoneSystem)
+    {
+        int key = destinations.Length;
+        foreach (Destination destination in destinations)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    bool loaded = zoneSystem.m_zones.ContainsKey(new Vector2s(destination.Zone.x + dx, destination.Zone.y + dy));
+                    key = key * 31 + (loaded ? 1 : 0);
+                }
+            }
+
+            key = key * 31 + DestinationSync.CountKnownObjects(destination.Position);
+        }
+
+        return key;
     }
 
     private static readonly bool[] PortalPasses = { true, false };

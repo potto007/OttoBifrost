@@ -15,6 +15,11 @@ All notable changes to OttoBifrost.
 - Fast teleports keep their own time. Server devcommands' "Debug mode fast teleport"
   sets the teleport timer to 15 in debug mode, which handed a fast trip to vanilla
   on its first frame, so you could land before the floors arrived.
+- Destinations that are already built cost less while you stand near them. The pass
+  that creates their objects slows to every 2 seconds once it finds nothing to do,
+  and speeds up again when their zones or objects change.
+- With `LogPerformance` on, "server reports complete" is logged once per change
+  instead of after every update.
 
 ## v1.1.0
 
