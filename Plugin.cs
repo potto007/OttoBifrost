@@ -14,7 +14,7 @@ namespace OttoBifrost;
 public class OttoBifrostPlugin : BaseUnityPlugin
 {
     internal const string ModName = "OttoBifrost";
-    internal const string ModVersion = "1.1.0";
+    internal const string ModVersion = "1.2.0";
     internal const string Author = "potto007";
     internal const string ModGUID = $"{Author}.{ModName}";
 

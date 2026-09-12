@@ -1,6 +1,6 @@
 {
   "name": "OttoBifrost",
-  "version_number": "1.1.0",
+  "version_number": "1.2.0",
   "website_url": "https://github.com/potto007/OttoBifrost",
   "description": "See where a portal leads before you step through. The destination loads while you walk up, so you arrive with the floors already built.",
   "dependencies": [

@@ -2,7 +2,7 @@
 
 All notable changes to OttoBifrost.
 
-## Unreleased
+## v1.2.0
 
 - `StaticView` pictures shimmer and ripple, fade out at the rim, and are 30%
   translucent.
