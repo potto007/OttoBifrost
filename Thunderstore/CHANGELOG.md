@@ -2,6 +2,10 @@
 
 All notable changes to OttoBifrost.
 
+## v1.3.1
+
+- Rebuilt against Valheim 1.0.14. Every Harmony patch target still resolves in this build, and nothing else changed.
+
 ## v1.3.0
 
 - `StaticView` shows its first picture sooner. It waits only for the objects within
