@@ -2,7 +2,7 @@
 
 # OttoBifrost
 
-### For Valheim 1.0.12
+### For Valheim 1.0.16
 
 Walk up to a portal and you see through it. The disc on the portal shows the far
 end, as a picture or live, and while you look the mod loads that place.

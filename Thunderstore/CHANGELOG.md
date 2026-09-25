@@ -2,6 +2,10 @@
 
 All notable changes to OttoBifrost.
 
+## 1.3.3
+
+- Rebuilt against Valheim 1.0.16. Every Harmony patch target still resolves in this build, and nothing else changed.
+
 ## v1.3.2
 
 - Rebuilt against Valheim 1.0.15. Every Harmony patch target still resolves in this build, and nothing else changed.
