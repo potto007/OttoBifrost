@@ -12,7 +12,7 @@ namespace OttoBifrost.Components;
 /// StaticView takes a first picture once the objects close to the far portal exist, and a second
 /// once the whole arrival area does, then renders nothing until the next approach. LiveView
 /// renders only the window nearest the player, to bound the render cost. The others keep their
-/// last frame.
+/// last frame. None draws nothing; DestinationLoader preloads the far end on its own.
 public sealed class PortalWindow : MonoBehaviour
 {
     private const float MaxViewDistance = 12f;
@@ -144,6 +144,15 @@ public sealed class PortalWindow : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (OttoBifrostPlugin.PreviewMode.Value == OttoBifrostPlugin.PreviewModes.None)
+        {
+            // Leaves the opening to another mod. A later switch back starts from a fresh picture.
+            SetDiscVisible(false);
+            _hasFrame = false;
+            ResetStaticCapture();
+            return;
+        }
+
         Camera main = Camera.main;
         Player player = Player.m_localPlayer;
         if (main == null || player == null)

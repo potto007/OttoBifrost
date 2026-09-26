@@ -40,7 +40,8 @@ public class OttoBifrostPlugin : BaseUnityPlugin
     internal enum PreviewModes
     {
         StaticView,
-        LiveView
+        LiveView,
+        None
     }
 
     internal static ConfigEntry<bool> LockConfiguration = null!;
@@ -83,7 +84,8 @@ public class OttoBifrostPlugin : BaseUnityPlugin
         FastTeleport = BindSynced(GeneralSection, "FastTeleport", true, "Skip the vanilla wait when the destination is already loaded.");
         PreviewMode = Config.Bind(PreviewSection, "PreviewMode", PreviewModes.StaticView,
             "StaticView shows one picture of the destination, taken once its objects are built, and renders nothing after that. " +
-            "LiveView renders the nearest portal's destination continuously and follows your head. Not synced.");
+            "LiveView renders the nearest portal's destination continuously and follows your head. " +
+            "None draws no preview, so another mod can draw one, and still preloads destinations. Not synced.");
         LogPerformance = Config.Bind(DebugSection, "LogPerformance", false, "Write a timing summary to the log every 5 seconds. Leave off in normal play. Not synced.");
         MigratePreviewMode(savedBy);
     }

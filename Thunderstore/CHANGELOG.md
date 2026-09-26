@@ -2,6 +2,11 @@
 
 All notable changes to OttoBifrost.
 
+## Unreleased
+
+- `PreviewMode = None` turns the portal preview off, so another mod can draw its own
+  visual in the opening. Destinations still preload and fast teleports still apply.
+
 ## 1.3.3
 
 - Rebuilt against Valheim 1.0.16. Every Harmony patch target still resolves in this build, and nothing else changed.
