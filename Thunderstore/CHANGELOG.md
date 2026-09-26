@@ -2,7 +2,7 @@
 
 All notable changes to OttoBifrost.
 
-## Unreleased
+## 1.4.0
 
 - `PreviewMode = None` turns the portal preview off, so another mod can draw its own
   visual in the opening. Destinations still preload and fast teleports still apply.

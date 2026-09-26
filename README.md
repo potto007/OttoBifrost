@@ -4,7 +4,7 @@
 
 ### For Valheim 1.0.16
 
-**Version 1.3.3**, built and Harmony-checked against Valheim 1.0.16.
+**Version 1.4.0**, built and Harmony-checked against Valheim 1.0.16.
 
 Walk up to a portal and you see through it. The disc on the portal shows the far
 end, as a picture or live, and while you look the mod loads that place.
