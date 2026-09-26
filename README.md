@@ -113,4 +113,4 @@ OttoBifrost is written and maintained by Paul Otto. It depends on the BepInEx pa
 and it carries ServerSync inside the DLL for the config sync and the version check.
 Bugs are mine, so report them at https://github.com/potto007/OttoBifrost. MIT licence.
 
-The `None` preview mode was **ItsBlade**'s idea, first built in their fork of OttoBifrost.
+The `None` preview mode was **ItsBlade**'s idea, first built in their fork, [OttoBifrost_NoPreview](https://thunderstore.io/c/valheim/p/ItsBlade/OttoBifrost_NoPreview/).

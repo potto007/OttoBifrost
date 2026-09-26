@@ -6,7 +6,8 @@ All notable changes to OttoBifrost.
 
 - `PreviewMode = None` turns the portal preview off, so another mod can draw its own
   visual in the opening. Destinations still preload and fast teleports still apply.
-  The idea comes from ItsBlade's fork of OttoBifrost.
+  The idea comes from ItsBlade's fork,
+  [OttoBifrost_NoPreview](https://thunderstore.io/c/valheim/p/ItsBlade/OttoBifrost_NoPreview/).
 
 ## 1.3.3
 
