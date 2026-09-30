@@ -15,6 +15,9 @@ internal readonly struct Destination(Vector3 position, Vector3 forward, int radi
 }
 
 /// The areas the zone and object patches keep loaded, in load order.
+///
+/// Every method that depends on the clock takes the time as a plain value, so the ordering rules
+/// run without the engine.
 internal static class Destinations
 {
     private sealed class PortalRequest
@@ -25,12 +28,14 @@ internal static class Destinations
         public float Distance;
     }
 
-    private const int ArrivalRadius = 3;
+    internal const int ArrivalRadius = 3;
     // Radius 1 holds the far portal and its surroundings, which is all a preview needs.
-    private const int SecondaryRadius = 1;
+    internal const int SecondaryRadius = 1;
     // Portals in a hub room stand a few meters apart. Without a margin, the nearest flips as
     // the player walks, and the full-size area moves between bases each time.
     private const float NearestSwitchMargin = 2f;
+    // The loaded area grows one ring at a time, so walking up does not cause a hitch.
+    private const float SecondsPerRing = 0.4f;
 
     private static readonly Dictionary<ZDOID, PortalRequest> Requests = new();
     private static readonly List<PortalRequest> Others = new();
@@ -47,6 +52,15 @@ internal static class Destinations
     internal static Destination[] Active = Array.Empty<Destination>();
 
     internal static bool Any => Active.Length != 0;
+
+    /// The radius a portal asks for: 3x3 zones past 10 m, 5x5 inside 10 m, 7x7 inside 5 m, grown
+    /// one ring per SecondsPerRing since the request began.
+    internal static int RadiusFor(float distance, float secondsSinceRequest)
+    {
+        int wanted = distance <= 5f ? ArrivalRadius : distance <= 10f ? 2 : SecondaryRadius;
+        int grown = 1 + (int)(secondsSinceRequest / SecondsPerRing);
+        return Mathf.Min(wanted, grown);
+    }
 
     /// distance is from the player to the portal, and the nearest portal loads first.
     internal static void Request(ZDOID portal, Vector3 farEnd, Vector3 farForward, int radius, float distance)
@@ -85,8 +99,8 @@ internal static class Destinations
         _teleporting = true;
     }
 
-    /// The landing spot stays loaded for holdSeconds, after the nearest portal's destination.
-    internal static void EndTeleport(Vector3 landing, float holdSeconds)
+    /// The landing spot stays loaded for holdSeconds from now, after the nearest portal's destination.
+    internal static void EndTeleport(Vector3 landing, float holdSeconds, float now)
     {
         _teleporting = false;
         foreach (ZDOID portal in DeferredReleases)
@@ -95,13 +109,13 @@ internal static class Destinations
 
         _holdingArrival = true;
         _arrival = landing;
-        _arrivalReleaseTime = Time.time + holdSeconds;
+        _arrivalReleaseTime = now + holdSeconds;
         Rebuild();
     }
 
-    internal static void Tick()
+    internal static void Tick(float now)
     {
-        if (_holdingArrival && Time.time >= _arrivalReleaseTime)
+        if (_holdingArrival && now >= _arrivalReleaseTime)
         {
             _holdingArrival = false;
             _arrivalReleaseTime = float.MaxValue;

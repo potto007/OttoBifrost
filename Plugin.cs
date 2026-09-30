@@ -63,7 +63,7 @@ public class OttoBifrostPlugin : BaseUnityPlugin
     private void Update()
     {
         PerfStats.Tick(Time.unscaledDeltaTime, LogPerformance.Value);
-        Destinations.Tick();
+        Destinations.Tick(Time.time);
         DestinationSync.ClientUpdate();
     }
 

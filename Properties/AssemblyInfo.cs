@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using OttoBifrost;
 
@@ -10,3 +11,6 @@ using OttoBifrost;
 [assembly: Guid("EDE07575-F656-4406-985E-38F1390B528E")]
 [assembly: AssemblyVersion(OttoBifrostPlugin.ModVersion)]
 [assembly: AssemblyFileVersion(OttoBifrostPlugin.ModVersion)]
+
+// The unit tests under tests/ exercise internal types directly.
+[assembly: InternalsVisibleTo("OttoBifrost.Tests")]

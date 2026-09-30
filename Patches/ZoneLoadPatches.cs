@@ -194,7 +194,7 @@ internal static class ZoneLoadPatches
                 for (int dx = -1; dx <= 1; dx++)
                 {
                     Vector2s zone = new(destination.Zone.x + dx, destination.Zone.y + dy);
-                    if (!zoneSystem.m_zones.ContainsKey(zone) && WithinPrimeRadius(zoneSystem, zone, destination.Position))
+                    if (!zoneSystem.m_zones.ContainsKey(zone) && WithinPrimeRadius(zoneSystem.m_zoneSize, zone, destination.Position))
                         AddMissing(zone);
                 }
             }
@@ -239,13 +239,39 @@ internal static class ZoneLoadPatches
     }
 
     /// Whether any part of the zone lies within PrimeRadius of point, on the ground plane.
-    private static bool WithinPrimeRadius(ZoneSystem zoneSystem, Vector2s zone, Vector3 point)
+    internal static bool WithinPrimeRadius(float zoneSize, Vector2s zone, Vector3 point)
     {
-        float halfZone = zoneSystem.m_zoneSize * 0.5f;
+        float halfZone = zoneSize * 0.5f;
         Vector3 zonePos = ZoneSystem.GetZonePos(zone);
         float gapX = Mathf.Max(Mathf.Abs(point.x - zonePos.x) - halfZone, 0f);
         float gapZ = Mathf.Max(Mathf.Abs(point.z - zonePos.z) - halfZone, 0f);
         return gapX * gapX + gapZ * gapZ <= PrimeRadius * PrimeRadius;
+    }
+
+    /// Whether an object counts as near a destination. A terrain edit shapes its whole zone, so
+    /// its distance does not matter. The distance includes height: a dungeon interior sits
+    /// thousands of meters above its entrance, and the near set never includes it.
+    internal static bool WithinRadius(ZDO.ObjectType type, float distanceSqr, float radius)
+    {
+        return type == ZDO.ObjectType.Terrain || distanceSqr <= radius * radius;
+    }
+
+    /// Whether an object at offset from a far portal is more than allowance behind it along
+    /// forward, on the ground plane. Such an object is out of a StaticView picture. A terrain
+    /// edit is never behind, for the same reason it is always within radius.
+    internal static bool IsBehind(ZDO.ObjectType type, Vector3 offset, Vector3 forward, float allowance)
+    {
+        if (type == ZDO.ObjectType.Terrain)
+            return false;
+        offset.y = 0f;
+        return Vector3.Dot(offset, forward) < -allowance;
+    }
+
+    /// A pass that created something keeps the short interval. An empty pass doubles the wait,
+    /// up to MaxPrimeInterval, so built destinations cost little.
+    internal static float NextPrimeWait(float currentWait, bool createdAny)
+    {
+        return createdAny ? PrimeInterval : Mathf.Min(currentWait * 2f, MaxPrimeInterval);
     }
 
     /// IsAreaReady finds its objects through FindSectorObjects. With the destination patches
@@ -296,7 +322,7 @@ internal static class ZoneLoadPatches
                 break;
         }
 
-        _primeWait = budget < CreatesPerPass ? PrimeInterval : Mathf.Min(_primeWait * 2f, MaxPrimeInterval);
+        _primeWait = NextPrimeWait(_primeWait, budget < CreatesPerPass);
         _nextPrimeTime = Time.time + _primeWait;
         if (PerfStats.Enabled)
         {
@@ -305,9 +331,12 @@ internal static class ZoneLoadPatches
         }
     }
 
-    private readonly struct Candidate(ZDO zdo, bool portal, bool behind, float distanceSqr)
+    /// An object waiting to be created near a destination, with everything the order needs read
+    /// off the ZDO once, so the sort compares plain values.
+    internal readonly struct Candidate(ZDO? zdo, ZDO.ObjectType type, bool portal, bool behind, float distanceSqr)
     {
-        public readonly ZDO Zdo = zdo;
+        public readonly ZDO? Zdo = zdo;
+        public readonly ZDO.ObjectType Type = type;
         public readonly bool Portal = portal;
         public readonly bool Behind = behind;
         public readonly float DistanceSqr = distanceSqr;
@@ -316,9 +345,9 @@ internal static class ZoneLoadPatches
     /// Vanilla type order first, so no piece appears before the terrain edits and supports under
     /// it. Within a type: portals, so a preview finds its far portal early, then objects in front
     /// of the far portal, nearest first.
-    private static readonly Comparison<Candidate> ByPriority = (a, b) =>
+    internal static readonly Comparison<Candidate> ByPriority = (a, b) =>
     {
-        int order = ((int)b.Zdo.Type).CompareTo((int)a.Zdo.Type);
+        int order = ((int)b.Type).CompareTo((int)a.Type);
         if (order != 0)
             return order;
         if (a.Portal != b.Portal)
@@ -335,7 +364,6 @@ internal static class ZoneLoadPatches
         // A fast teleport checks around the arrival point, about 1.5 m from the far portal, so the
         // pass reaches a little further than the check.
         float radius = PrimeRadius + 2f;
-        float radiusSqr = radius * radius;
         Candidates.Clear();
         CandidateSectors.Clear();
         for (int dy = -1; dy <= 1; dy++)
@@ -356,12 +384,11 @@ internal static class ZoneLoadPatches
 
             Vector3 offset = zdo.GetPosition() - destination.Position;
             float distanceSqr = offset.sqrMagnitude;
-            // A terrain edit shapes its whole zone, so its distance does not matter.
-            if (zdo.Type != ZDO.ObjectType.Terrain && distanceSqr > radiusSqr)
+            ZDO.ObjectType type = zdo.Type;
+            if (!WithinRadius(type, distanceSqr, radius))
                 continue;
 
-            offset.y = 0f;
-            Queue.Add(new Candidate(zdo, Portals.IsPortal(zdo), Vector3.Dot(offset, destination.Forward) < -BehindAllowance, distanceSqr));
+            Queue.Add(new Candidate(zdo, type, Portals.IsPortal(zdo), IsBehind(type, offset, destination.Forward, BehindAllowance), distanceSqr));
         }
 
         Candidates.Clear();
@@ -375,7 +402,7 @@ internal static class ZoneLoadPatches
             if (budget == 0)
                 break;
 
-            ZDO zdo = candidate.Zdo;
+            ZDO zdo = candidate.Zdo!;
             Vector2s zone = zdo.GetSector();
             // Lower types in a zone wait while a higher type there is unfinished.
             if (UnfinishedZones.TryGetValue(zone, out ZDO.ObjectType unfinished) && zdo.Type < unfinished)
@@ -447,7 +474,6 @@ internal static class ZoneLoadPatches
         if (zoneSystem == null || scene == null || ZDOMan.instance == null)
             return NearState.ZonesMissing;
 
-        float radiusSqr = PrimeRadius * PrimeRadius;
         Vector2s centre = ZoneSystem.GetZone(origin);
 
         NearObjects.Clear();
@@ -457,7 +483,7 @@ internal static class ZoneLoadPatches
             for (int dx = -1; dx <= 1; dx++)
             {
                 Vector2s zone = new(centre.x + dx, centre.y + dy);
-                if (!WithinPrimeRadius(zoneSystem, zone, origin))
+                if (!WithinPrimeRadius(zoneSystem.m_zoneSize, zone, origin))
                     continue;
                 // An unloaded zone has no ground yet.
                 if (!zoneSystem.m_zones.ContainsKey(zone))
@@ -474,14 +500,10 @@ internal static class ZoneLoadPatches
             if (!zdo.IsValid() || !scene.IsPrefabZDOValid(zdo) || scene.HaveInstance(zdo))
                 continue;
 
-            // A terrain edit shapes its whole zone, so its position does not matter. The distance
-            // includes height, as in CreateNearDestination: a dungeon interior sits thousands of
-            // meters above its entrance, and the pass never creates it.
+            // The same near set CreateNearDestination creates first.
             Vector3 offset = zdo.GetPosition() - origin;
-            if (zdo.Type != ZDO.ObjectType.Terrain && offset.sqrMagnitude > radiusSqr)
-                continue;
-            offset.y = 0f;
-            if (zdo.Type != ZDO.ObjectType.Terrain && Vector3.Dot(offset, forward) < -behindAllowance)
+            ZDO.ObjectType type = zdo.Type;
+            if (!WithinRadius(type, offset.sqrMagnitude, PrimeRadius) || IsBehind(type, offset, forward, behindAllowance))
                 continue;
 
             blocker = zdo;

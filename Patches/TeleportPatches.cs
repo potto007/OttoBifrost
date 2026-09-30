@@ -103,32 +103,53 @@ internal static class TeleportPatches
         }
 
         TrackArrivalObjects(target);
-        bool dataSettled = _serverComplete ||
-                           (Time.time - _movedAt >= ServerReactionTime && Time.time - _arrivalChangedAt >= ArrivalStableTime);
+        bool dataSettled = ArrivalSettled(_serverComplete, Time.time - _movedAt, Time.time - _arrivalChangedAt);
         // Full circle: the player can turn round on landing.
         bool nearBuilt = ZoneLoadPatches.AreNearObjectsBuilt(target, Vector3.forward, ZoneLoadPatches.PrimeRadius);
         bool floorFound = ZoneSystem.instance.FindFloor(target, out float floorHeight);
 
+        switch (Decide(nearBuilt, dataSettled, floorFound, timer))
+        {
+            case TripStep.Finish:
+                if (floorFound)
+                    __instance.transform.position = new Vector3(target.x, floorHeight, target.z);
+                __instance.m_teleportTimer = 0f;
+                __instance.m_teleporting = false;
+                __instance.ResetCloth();
+                _fastTrip = false;
+                LogOutcome("finished", target, nearBuilt, dataSettled, floorFound);
+                return false;
+            case TripStep.HandOver:
+                _fastTrip = false;
+                LogOutcome("handed over to vanilla", target, nearBuilt, dataSettled, floorFound);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    internal enum TripStep
+    {
+        Wait,
+        Finish,
+        HandOver
+    }
+
+    /// The arrival data has settled when the server says the destination is complete, or when
+    /// the server has had time to react to the move and the arrival object count has held still.
+    internal static bool ArrivalSettled(bool serverComplete, float secondsSinceMove, float secondsSinceArrivalChange)
+    {
+        return serverComplete || (secondsSinceMove >= ServerReactionTime && secondsSinceArrivalChange >= ArrivalStableTime);
+    }
+
+    /// What a fast trip does this frame. timer is on the vanilla scale. A trip finishes once the
+    /// near objects are built and the data has settled, with a floor under the player or after
+    /// the floor search has timed out. Past FallbackToVanillaTime vanilla takes over.
+    internal static TripStep Decide(bool nearBuilt, bool dataSettled, bool floorFound, float timer)
+    {
         if (nearBuilt && dataSettled && (floorFound || timer > FloorSearchTimeout))
-        {
-            if (floorFound)
-                __instance.transform.position = new Vector3(target.x, floorHeight, target.z);
-            __instance.m_teleportTimer = 0f;
-            __instance.m_teleporting = false;
-            __instance.ResetCloth();
-            _fastTrip = false;
-            LogOutcome("finished", target, nearBuilt, dataSettled, floorFound);
-            return false;
-        }
-
-        if (timer > FallbackToVanillaTime)
-        {
-            _fastTrip = false;
-            LogOutcome("handed over to vanilla", target, nearBuilt, dataSettled, floorFound);
-            return true;
-        }
-
-        return false;
+            return TripStep.Finish;
+        return timer > FallbackToVanillaTime ? TripStep.HandOver : TripStep.Wait;
     }
 
     [HarmonyPostfix]
@@ -139,7 +160,7 @@ internal static class TeleportPatches
             return;
 
         _awaitingArrival = false;
-        Destinations.EndTeleport(__instance.transform.position, ArrivalHoldSeconds);
+        Destinations.EndTeleport(__instance.transform.position, ArrivalHoldSeconds, Time.time);
     }
 
     private static void HoldAtTarget(Player player)

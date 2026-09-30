@@ -8,8 +8,6 @@ public sealed class DestinationLoader : MonoBehaviour
 {
     private const float ReachDistance = 15f;
     private const float CheckInterval = 0.2f;
-    // The loaded area grows one ring at a time, so walking up does not cause a hitch.
-    private const float SecondsPerRing = 0.4f;
 
     private TeleportWorld _portal = null!;
     private ZDOID _portalId = ZDOID.None;
@@ -57,10 +55,9 @@ public sealed class DestinationLoader : MonoBehaviour
             DestinationSync.Track(_farEndId);
         }
 
-        int grown = 1 + (int)((Time.time - _requestedAt) / SecondsPerRing);
         // Vanilla lands the player on this side of the far portal.
         Destinations.Request(_portalId, farEnd.GetPosition(), farEnd.GetRotation() * Vector3.forward,
-            Mathf.Min(RadiusFor(distance), grown), distance);
+            Destinations.RadiusFor(distance, Time.time - _requestedAt), distance);
     }
 
     private void OnDisable()
@@ -77,12 +74,5 @@ public sealed class DestinationLoader : MonoBehaviour
         DestinationSync.Untrack(_farEndId);
         _portalId = ZDOID.None;
         _farEndId = ZDOID.None;
-    }
-
-    private static int RadiusFor(float distance)
-    {
-        if (distance <= 5f)
-            return 3;
-        return distance <= 10f ? 2 : 1;
     }
 }
