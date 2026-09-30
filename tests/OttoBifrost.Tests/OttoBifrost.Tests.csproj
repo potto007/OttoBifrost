@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Off-runtime unit tests. They load the built mod and the game's own assemblies
+       into a plain .NET process, which works for the pure C# parts of the game
+       (ZDOID, Vector2s, the zone arithmetic) and for the mod's decision logic.
+       Anything that reaches Unity's native side (MonoBehaviour lookups, ZDO, Player,
+       Time) is out of reach here and stays with the in-game checks. -->
+  <Import Project="../../environment.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <ModConfiguration Condition="'$(ModConfiguration)' == ''">Release</ModConfiguration>
+    <ModDll>$(MSBuildThisFileDirectory)../../bin/$(ModConfiguration)/OttoBifrost.dll</ModDll>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="OttoBifrost" HintPath="$(ModDll)" />
+    <Reference Include="assembly_valheim" HintPath="$(CorlibPath)/assembly_valheim.dll" />
+    <Reference Include="assembly_utils" HintPath="$(CorlibPath)/assembly_utils.dll" />
+    <Reference Include="SoftReferenceableAssets" HintPath="$(CorlibPath)/SoftReferenceableAssets.dll" />
+    <Reference Include="UnityEngine" HintPath="$(CorlibPath)/UnityEngine.dll" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(CorlibPath)/UnityEngine.CoreModule.dll" />
+    <Reference Include="BepInEx" HintPath="$(BepInExPath)/core/BepInEx.dll" />
+    <Reference Include="0Harmony" HintPath="$(BepInExPath)/core/0Harmony.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <Target Name="RequireModDll" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(ModDll)')" Text="$(ModDll) is missing. Build the mod first: tests/run.sh does both." />
+  </Target>
+</Project>
