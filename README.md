@@ -80,7 +80,7 @@ game.
 ___________________________
 #### Installation (automatic)
 
-Use Gale, r2modman or the Thunderstore Mod Manager. OttoBifrost is on Thunderstore.
+Use r2modman, Gale or the Thunderstore Mod Manager. OttoBifrost is on Thunderstore.
 Search for it and install.
 ___________________________
 
