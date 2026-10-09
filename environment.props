@@ -2,7 +2,9 @@
 <!-- Default machine paths. Do not put personal paths here: this file is public.
      Override any property below in environment.local.props (gitignored) next to this
      file, or on the command line with -p:Name=value. Every value is a default that
-     only applies when the property is still empty. -->
+     only applies when the property is still empty, so override the narrowest knob
+     that is wrong on your machine (WindowsDrive, SteamPath, ...) rather than
+     the composed result. -->
 <Project>
     <Import Project="$(MSBuildThisFileDirectory)environment.local.props" Condition="Exists('$(MSBuildThisFileDirectory)environment.local.props')" />
 
@@ -18,20 +20,33 @@
         <PluginFolder Condition="'$(PluginFolder)' == ''">potto007-OttoBifrost</PluginFolder>
     </PropertyGroup>
 
-    <!-- Windows build (Visual Studio / Rider on the Windows side). -->
+    <!-- Windows build (Visual Studio / Rider on the Windows side).
+         Nothing here names a drive: Steam's install dir comes from the registry
+         (falls back to the 32-bit Program Files), and the mod manager lives under %APPDATA%. -->
     <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
-        <ValheimGamePath Condition="'$(ValheimGamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimGamePath>
+        <SteamPath Condition="'$(SteamPath)' == ''">$(Registry:HKEY_CURRENT_USER\Software\Valve\Steam@SteamPath)</SteamPath>
+        <SteamPath Condition="'$(SteamPath)' == ''">$(MSBuildProgramFiles32)\Steam</SteamPath>
+        <ValheimGamePath Condition="'$(ValheimGamePath)' == ''">$(SteamPath)\steamapps\common\Valheim</ValheimGamePath>
         <BepInExPath Condition="'$(BepInExPath)' == ''">$(APPDATA)\$(ModManagerDir)\$(ModManagerGameDir)\profiles\$(ModProfile)\BepInEx</BepInExPath>
         <CorlibPath Condition="'$(CorlibPath)' == ''">$(ValheimGamePath)\valheim_Data\Managed</CorlibPath>
         <CopyOutputDLLPath Condition="'$(CopyOutputDLLPath)' == ''">$(BepInExPath)\plugins\$(PluginFolder)</CopyOutputDLLPath>
     </PropertyGroup>
 
-    <!-- WSL / Linux build against the same Windows install through /mnt/c.
-         Set WindowsUser in environment.local.props when it differs from the Linux user. -->
+    <!-- WSL / Linux build against a Windows install through the WSL drive mount.
+         There is no registry or %APPDATA% to ask from this side, so the Windows
+         layout is assumed and every piece of it is a knob:
+           WslMountRoot  where WSL mounts Windows drives (automount.root in wsl.conf)
+           WindowsDrive  drive letter holding Windows and the user profile
+           WindowsUser   Windows account name, when it differs from the Linux user
+           SteamPath     Steam install dir, when it is not under Program Files (x86) -->
     <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+        <WslMountRoot Condition="'$(WslMountRoot)' == ''">/mnt</WslMountRoot>
+        <WindowsDrive Condition="'$(WindowsDrive)' == ''">c</WindowsDrive>
+        <WindowsRoot Condition="'$(WindowsRoot)' == ''">$(WslMountRoot)/$(WindowsDrive)</WindowsRoot>
         <WindowsUser Condition="'$(WindowsUser)' == ''">$(USER)</WindowsUser>
-        <WindowsAppData Condition="'$(WindowsAppData)' == ''">/mnt/c/Users/$(WindowsUser)/AppData/Roaming</WindowsAppData>
-        <ValheimGamePath Condition="'$(ValheimGamePath)' == ''">/mnt/c/Program Files (x86)/Steam/steamapps/common/Valheim</ValheimGamePath>
+        <WindowsAppData Condition="'$(WindowsAppData)' == ''">$(WindowsRoot)/Users/$(WindowsUser)/AppData/Roaming</WindowsAppData>
+        <SteamPath Condition="'$(SteamPath)' == ''">$(WindowsRoot)/Program Files (x86)/Steam</SteamPath>
+        <ValheimGamePath Condition="'$(ValheimGamePath)' == ''">$(SteamPath)/steamapps/common/Valheim</ValheimGamePath>
         <BepInExPath Condition="'$(BepInExPath)' == ''">$(WindowsAppData)/$(ModManagerDir)/$(ModManagerGameDir)/profiles/$(ModProfile)/BepInEx</BepInExPath>
         <CorlibPath Condition="'$(CorlibPath)' == ''">$(ValheimGamePath)/valheim_Data/Managed</CorlibPath>
         <CopyOutputDLLPath Condition="'$(CopyOutputDLLPath)' == ''">$(BepInExPath)/plugins/$(PluginFolder)</CopyOutputDLLPath>
