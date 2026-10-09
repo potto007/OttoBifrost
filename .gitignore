@@ -8,3 +8,4 @@ riderModule.iml
 OttoBifrost.sln.DotSettings.user
 .claude/
 .playwright-mcp/
+environment.local.props

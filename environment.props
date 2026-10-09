@@ -1,17 +1,21 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<!-- Local machine paths. Edit this file, not the .csproj. -->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Machine paths. Generic defaults only; put personal overrides in
+     environment.local.props (gitignored), e.g. <WindowsUser>name</WindowsUser>. -->
 <Project>
+    <Import Project="$(MSBuildThisFileDirectory)environment.local.props" Condition="Exists('$(MSBuildThisFileDirectory)environment.local.props')" />
+
     <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
-        <ValheimGamePath>C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimGamePath>
-        <BepInExPath>C:\Users\paulo\AppData\Roaming\r2modmanPlus-local\Valheim\profiles\Default\BepInEx</BepInExPath>
-        <CorlibPath>$(ValheimGamePath)\valheim_Data\Managed</CorlibPath>
-        <CopyOutputDLLPath>$(BepInExPath)\plugins\potto007-OttoBifrost</CopyOutputDLLPath>
+        <ValheimGamePath Condition="'$(ValheimGamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimGamePath>
+        <BepInExPath Condition="'$(BepInExPath)' == ''">$(APPDATA)\r2modmanPlus-local\Valheim\profiles\Default\BepInEx</BepInExPath>
+        <CorlibPath Condition="'$(CorlibPath)' == ''">$(ValheimGamePath)\valheim_Data\Managed</CorlibPath>
+        <CopyOutputDLLPath Condition="'$(CopyOutputDLLPath)' == ''">$(BepInExPath)\plugins\potto007-OttoBifrost</CopyOutputDLLPath>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
-        <ValheimGamePath>/mnt/c/Program Files (x86)/Steam/steamapps/common/Valheim</ValheimGamePath>
-        <BepInExPath>/mnt/c/Users/paulo/AppData/Roaming/r2modmanPlus-local/Valheim/profiles/Default/BepInEx</BepInExPath>
-        <CorlibPath>$(ValheimGamePath)/valheim_Data/Managed</CorlibPath>
-        <CopyOutputDLLPath>$(BepInExPath)/plugins/potto007-OttoBifrost</CopyOutputDLLPath>
+        <WindowsUser Condition="'$(WindowsUser)' == ''">$(USER)</WindowsUser>
+        <ValheimGamePath Condition="'$(ValheimGamePath)' == ''">/mnt/c/Program Files (x86)/Steam/steamapps/common/Valheim</ValheimGamePath>
+        <BepInExPath Condition="'$(BepInExPath)' == ''">/mnt/c/Users/$(WindowsUser)/AppData/Roaming/r2modmanPlus-local/Valheim/profiles/Default/BepInEx</BepInExPath>
+        <CorlibPath Condition="'$(CorlibPath)' == ''">$(ValheimGamePath)/valheim_Data/Managed</CorlibPath>
+        <CopyOutputDLLPath Condition="'$(CopyOutputDLLPath)' == ''">$(BepInExPath)/plugins/potto007-OttoBifrost</CopyOutputDLLPath>
     </PropertyGroup>
 </Project>
