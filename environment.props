@@ -1,21 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Machine paths. Generic defaults only; put personal overrides in
-     environment.local.props (gitignored), e.g. <WindowsUser>name</WindowsUser>. -->
+<!-- Default machine paths. Do not put personal paths here: this file is public.
+     Override any property below in environment.local.props (gitignored) next to this
+     file, or on the command line with -p:Name=value. Every value is a default that
+     only applies when the property is still empty. -->
 <Project>
     <Import Project="$(MSBuildThisFileDirectory)environment.local.props" Condition="Exists('$(MSBuildThisFileDirectory)environment.local.props')" />
 
-    <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
-        <ValheimGamePath Condition="'$(ValheimGamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimGamePath>
-        <BepInExPath Condition="'$(BepInExPath)' == ''">$(APPDATA)\r2modmanPlus-local\Valheim\profiles\Default\BepInEx</BepInExPath>
-        <CorlibPath Condition="'$(CorlibPath)' == ''">$(ValheimGamePath)\valheim_Data\Managed</CorlibPath>
-        <CopyOutputDLLPath Condition="'$(CopyOutputDLLPath)' == ''">$(BepInExPath)\plugins\potto007-OttoBifrost</CopyOutputDLLPath>
+    <!-- Shared knobs. -->
+    <PropertyGroup>
+        <!-- Mod manager data folder name under AppData\Roaming. r2modman: r2modmanPlus-local, Gale: com.kesomannen.gale -->
+        <ModManagerDir Condition="'$(ModManagerDir)' == ''">r2modmanPlus-local</ModManagerDir>
+        <!-- Game folder name inside the mod manager (r2modman: Valheim, Gale: valheim). -->
+        <ModManagerGameDir Condition="'$(ModManagerGameDir)' == ''">Valheim</ModManagerGameDir>
+        <!-- Mod manager profile the Debug build deploys into. -->
+        <ModProfile Condition="'$(ModProfile)' == ''">Default</ModProfile>
+        <!-- Plugin folder name inside BepInEx/plugins. -->
+        <PluginFolder Condition="'$(PluginFolder)' == ''">potto007-OttoBifrost</PluginFolder>
     </PropertyGroup>
 
+    <!-- Windows build (Visual Studio / Rider on the Windows side). -->
+    <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+        <ValheimGamePath Condition="'$(ValheimGamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimGamePath>
+        <BepInExPath Condition="'$(BepInExPath)' == ''">$(APPDATA)\$(ModManagerDir)\$(ModManagerGameDir)\profiles\$(ModProfile)\BepInEx</BepInExPath>
+        <CorlibPath Condition="'$(CorlibPath)' == ''">$(ValheimGamePath)\valheim_Data\Managed</CorlibPath>
+        <CopyOutputDLLPath Condition="'$(CopyOutputDLLPath)' == ''">$(BepInExPath)\plugins\$(PluginFolder)</CopyOutputDLLPath>
+    </PropertyGroup>
+
+    <!-- WSL / Linux build against the same Windows install through /mnt/c.
+         Set WindowsUser in environment.local.props when it differs from the Linux user. -->
     <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
         <WindowsUser Condition="'$(WindowsUser)' == ''">$(USER)</WindowsUser>
+        <WindowsAppData Condition="'$(WindowsAppData)' == ''">/mnt/c/Users/$(WindowsUser)/AppData/Roaming</WindowsAppData>
         <ValheimGamePath Condition="'$(ValheimGamePath)' == ''">/mnt/c/Program Files (x86)/Steam/steamapps/common/Valheim</ValheimGamePath>
-        <BepInExPath Condition="'$(BepInExPath)' == ''">/mnt/c/Users/$(WindowsUser)/AppData/Roaming/r2modmanPlus-local/Valheim/profiles/Default/BepInEx</BepInExPath>
+        <BepInExPath Condition="'$(BepInExPath)' == ''">$(WindowsAppData)/$(ModManagerDir)/$(ModManagerGameDir)/profiles/$(ModProfile)/BepInEx</BepInExPath>
         <CorlibPath Condition="'$(CorlibPath)' == ''">$(ValheimGamePath)/valheim_Data/Managed</CorlibPath>
-        <CopyOutputDLLPath Condition="'$(CopyOutputDLLPath)' == ''">$(BepInExPath)/plugins/potto007-OttoBifrost</CopyOutputDLLPath>
+        <CopyOutputDLLPath Condition="'$(CopyOutputDLLPath)' == ''">$(BepInExPath)/plugins/$(PluginFolder)</CopyOutputDLLPath>
     </PropertyGroup>
 </Project>
