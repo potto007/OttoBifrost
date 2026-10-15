@@ -2,9 +2,9 @@
 
 # OttoBifrost
 
-### For Valheim 1.0.17
+### For Valheim 1.0.20
 
-**Version 1.4.1**, built and Harmony-checked against Valheim 1.0.17.
+**Version 1.4.2**, built and Harmony-checked against Valheim 1.0.20.
 
 Walk up to a portal and you see through it. The disc on the portal shows the far
 end, as a picture or live, and while you look the mod loads that place.
